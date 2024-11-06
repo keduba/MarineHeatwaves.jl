@@ -1,0 +1,3 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+MarineHeatwaves = "de38a2fb-735b-4df9-8733-90a2e2665a44"
