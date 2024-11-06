@@ -3,7 +3,7 @@ using NaNStatistics
 
 abstract type MarineHeatWave end
 
-struct MHCTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
+struct MHTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
     temp::VecOrMat{T}
     dates::StepRange{Date, Day}
     lyday::Vector{Ti}
@@ -13,6 +13,18 @@ struct MHCTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
     argfn::Function# = nanargmax
     anomfn::Function # = nanmaximum
 end
+
+struct MCTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
+    temp::VecOrMat{T}
+    dates::StepRange{Date, Day}
+    lyday::Vector{Ti}
+    mask
+    clima::VecOrMat
+    thresh::VecOrMat
+    argfn::Function# = nanargmax
+    anomfn::Function # = nanmaximum
+end
+
 
 struct MarineHW{T, N} <: MarineHeatWave
     temp::Array{T, N}
@@ -65,7 +77,7 @@ function _subtemp(sst::Array, mhwix)
     return msst, xz, xyz
 end
 
-function subtemp(sst::Vector, sstdate, evdate)
+function subtemp(sst, sstdate, evdate)
     etix, elyd = timeindices(sstdate, evdate)
     evsst, mask = _subtemp(sst, etix)
     return evsst, mask, elyd
@@ -99,6 +111,14 @@ function clthr(input::Vector, drange, thresh)
     return clima, climq
 end
 
+function clthr(input::Matrix, drange, thresh)
+    clima = reduce(hcat, clim(input, drange))
+    climq = reduce(hcat, tresh(input, drange, tresh))
+    _smoothdata!.(eachrow(clima))
+    _smoothdata!.(eachrow(climq))
+    return clima, climq
+end
+
 
 """
     _smoothdata!(ctarray::Union{Vector, SubArray}, pw) -> ctarray
@@ -109,11 +129,16 @@ end
 function _smoothdata!(ctarray, pw=pctwidth) 
     B = repeat(ctarray, 3)
     N = length(ctarray)
-    ctarray .= view(movmean(B, pw), N+1:2N)
+    ctarray[begin:end] = view(movmean(B, pw), N+1:2N)
     return ctarray
 end
 
-function mhctemp(sst::Vector{T}, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt}, cdate::StepRange{D, Dt}; threshold=threshold) where {T, D, Dt}
+
+exceed(x::MCTemp) = 
+
+
+
+function mhctemp(sst, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt}, cdate::StepRange{D, Dt}; threshold=threshold) where {D, Dt}
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
     clsst, mask, clyd = subtemp(sst, sstdate, cdate)
     dvec = daterange(clyd, winwidth)
@@ -122,13 +147,15 @@ function mhctemp(sst::Vector{T}, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt
 end
 
 function MHTemp(sst, sstdate, mdate, cdate; threshold=0.9)
-    return MHCTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmax, maximum)
+    return MHTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmax, maximum)
+
+end
+
+function MCTemp(sst, sstdate, mdate, cdate; threshold=0.1, exceed = ≤)
+    return MCTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmin, minimum)
 end
 
 
-function MCTemp(sst, sstdate, mdate, cdate; threshold=0.1)
-    return MHCTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmin, minimum)
-end
 
 
 
