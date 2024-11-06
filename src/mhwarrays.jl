@@ -1,31 +1,20 @@
 using Dates
 using NaNStatistics
 
-struct MCTemp{T <: AbstractFloat, Ti <: Integer}
-    temp::VecOrMat{T}
-    dates::StepRange{Date, Day}
-    lyday::Vector{Ti}
-    clima::VecOrMat
-    thresh::VecOrMat
-    pctile # = 0.1
-    argfn  # = nanargmin
-    anomfn # = nanminimum
-    mask
-end
+abstract type MarineHeatWave end
 
-struct MHTemp{T <: AbstractFloat, Ti <: Integer}
+struct MHCTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
     temp::VecOrMat{T}
     dates::StepRange{Date, Day}
     lyday::Vector{Ti}
+    mask
     clima::VecOrMat
     thresh::VecOrMat
-    pctile::Float32 # = 0.9
-    argfn::Function # = nanargmax
+    argfn::Function# = nanargmax
     anomfn::Function # = nanmaximum
-    mask
 end
 
-struct MarineHW{T, N}
+struct MarineHW{T, N} <: MarineHeatWave
     temp::Array{T, N}
     category::Array{T, N}
     exceed::Array{Union{Missing, Bool}, N}
@@ -124,7 +113,7 @@ function _smoothdata!(ctarray, pw=pctwidth)
     return ctarray
 end
 
-function mhctemp(sst::Vector{T}, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt}, cdate::StepRange{D, Dt}; threshold=0.1) where {T, D, Dt}
+function mhctemp(sst::Vector{T}, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt}, cdate::StepRange{D, Dt}; threshold=threshold) where {T, D, Dt}
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
     clsst, mask, clyd = subtemp(sst, sstdate, cdate)
     dvec = daterange(clyd, winwidth)
@@ -132,8 +121,14 @@ function mhctemp(sst::Vector{T}, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt
     return mhsst, mdate, mlyd, mask, clima, climq
 end
 
+function MHTemp(sst, sstdate, mdate, cdate; threshold=0.9)
+    return MHCTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmax, maximum)
+end
 
 
+function MCTemp(sst, sstdate, mdate, cdate; threshold=0.1)
+    return MHCTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmin, minimum)
+end
 
 
 
