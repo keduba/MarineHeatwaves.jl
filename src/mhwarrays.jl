@@ -1,6 +1,4 @@
-using Dates
-using NaNStatistics
-
+using Base.Iterators: flatten
 abstract type MarineHeatWave end
 
 struct MHTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
@@ -50,7 +48,7 @@ Base.IteratorSize(::Base.Iterators.Flatten{<:AbstractVector{<:UnitRange}}) = Bas
 """
     seamask(sst) -> BitVecOrMat
 
-    Returns only sea areas. Optional dimension. For arrays, expected dimension is the 3rd dimension.
+Returns only sea areas. Optional dimension. For arrays, expected dimension is the 3rd dimension.
 """
 seamask(xy, dims=3) = dropdims(count(!isnan, xy, dims=dims) .> 0, dims=dims)
 
@@ -73,7 +71,7 @@ end
 function _subtemp(sst::Array, mhwix)
     xz = seamask(sst)
     xyz = CartesianIndices(xz)[xz]
-    msst = view(sst, xyz, mhwix)
+    msst = sst[xyz, mhwix]
     return msst, xz, xyz
 end
 
@@ -95,7 +93,7 @@ function tresh(input::Matrix, drange, thresh)
 end
 
 function clim(input::Matrix, drange)
-    clima = [mean(input[:,vcat(drange[i]...)], dims = 2) for i in eachindex(drange)]
+    clima = [vec(mean(input[:,vcat(drange[i]...)], dims = 2)) for i in eachindex(drange)]
     clima[60] = mean((clima[59], clima[61]))
     return clima
 end
@@ -113,7 +111,7 @@ end
 
 function clthr(input::Matrix, drange, thresh)
     clima = reduce(hcat, clim(input, drange))
-    climq = reduce(hcat, tresh(input, drange, tresh))
+    climq = reduce(hcat, tresh(input, drange, thresh))
     _smoothdata!.(eachrow(clima))
     _smoothdata!.(eachrow(climq))
     return clima, climq
@@ -134,11 +132,10 @@ function _smoothdata!(ctarray, pw=pctwidth)
 end
 
 
-exceed(x::MCTemp) = 
 
 
 
-function mhctemp(sst, sstdate::StepRange{D,Dt}, mdate::StepRange{D,Dt}, cdate::StepRange{D, Dt}; threshold=threshold) where {D, Dt}
+function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}, cdate::StepRange{Date, Day}; threshold=threshold)
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
     clsst, mask, clyd = subtemp(sst, sstdate, cdate)
     dvec = daterange(clyd, winwidth)

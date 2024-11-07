@@ -1,6 +1,4 @@
-Base.length(fl::Base.Iterators.Flatten{<:AbstractVector{<:UnitRange}}) = sum(length, fl.it)
 
-Base.IteratorSize(::Base.Iterators.Flatten{<:AbstractVector{<:UnitRange}}) = Base.HasLength()
 
 
 """
@@ -39,9 +37,9 @@ end
 """
     Return a vector of the dates ranges based on the leapyearday.
 
-    daterange(lyd::Vector{Integer}, window::Integer=5) -> Vector{UnitRange{Integer}}
+daterange(lyd::Vector{Integer}, window::Integer=5) -> Vector{UnitRange{Integer}}
 """
-function daterange(lydd::Vector{T}, w::T)
+function daterange(lydd::Vector{T}, w::T) where T <: Integer
     nd = Vector{Vector{UnitRange{T}}}(undef, 366);
     for n in eachindex(nd)
         nd[n] = UnitRange{T}[max(1, x-w):min(lastindex(lydd), x+w) for (x, _) in  Iterators.filter(p -> isequal(n, p.second), pairs(lydd))]
