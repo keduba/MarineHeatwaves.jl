@@ -63,7 +63,7 @@ seamask(xy, dims=3) = dropdims(count(!isnan, xy, dims=dims) .> 0, dims=dims)
 function _subtemp(sst::Vector, mhwix) 
    xz = seamask(sst, 1)[1]
    if xz
-       msst = view(sst, mhwix)
+        msst = sst[mhwix]
        return msst, xz
    else
        @warn "The temperature data is all NaNs. Please check again."
@@ -94,18 +94,21 @@ function tresh(input::Matrix, drange, thresh)
     return outq
 end
 
+climv(input::Vector, drange) = [mean(findices(input, dd)) for dd in drange]
+
+treshv(input::Vector, drange, thresh) = [quantile(findices(input, dd), thresh) for dd in drange]
+
 function clim(input::Matrix, drange)
     clima = [vec(mean(input[:,vcat(drange[i]...)], dims = 2)) for i in eachindex(drange)]
     clima[60] = mean((clima[59], clima[61]))
     return clima
 end
 
-clim(input::Vector, drange) = [mean(findices(input, dd)) for dd in drange]
-tresh(input::Vector, drange, thresh) = [quantile(findices(input, dd), thresh) for dd in drange]
+
 
 function clthr(input::Vector, drange, thresh)
-    clima = clim(input, drange)
-    climq = tresh(input, drange, thresh)
+    clima = climv(input, drange)
+    climq = treshv(input, drange, thresh)
     _smoothdata!(clima)
     _smoothdata!(climq)
     return clima, climq
@@ -183,18 +186,18 @@ function _indices(mstarts, menders, mindur, maxgap)
     oldurations = menders - mstarts
     mstts, mends = (ix[oldurations .≥ mindur] for ix in (mstarts, menders))
     hna = mstts[2:end] - mends[1:end-1] .> maxgap
-    return mstts, mends, hna
+    return (; mstts, mends, hna)
 end
 
 function startindices(mstts, hna)
-    mstartsxs =  ones(length(hna)+1)
+    mstartsxs =  ones(Int, sum(hna)+1)
     mstartsxs[1] = first(mstts)
     mstartsxs[2:end] = mstts[2:end][hna] .+ 1
     return mstartsxs
 end
 
 function endindices(mends, hna)
-    mendsxs =  ones(length(hna)+1)
+    mendsxs =  ones(Int, sum(hna)+1)
     mendsxs[end] = last(mends)
     mendsxs[begin:end-1] = mends[begin:end-1][hna]
     return mendsxs
@@ -204,49 +207,52 @@ end
 """
     This function calculates the anomalies for the temperature array and the clim/threshold.
 """
-function anoms(sst, clim, thsh, lyd, mst, mse) 
+function _anoms(sst, clim, thsh, lyd, mst, mse) 
     anom = sst[mst:mse] - clim[lyd[mst:mse]]
-    atcd = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
+    thsd = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
     anbf = sst[mst-1] - clim[lyd[mst-1]]
     anft = sst[mse+1] - clim[lyd[mse+1]]
     lnxt = lastindex(sst)
-    return (; anom, atcd, anbf, anft, lnxt)
+    return (; anom, anbf, anft, lnxt, thsd)
 end
 
-categorys(eanoms) = nanmin(4, nanmaximum(fld.(eanoms.anom, eanoms.atcd)))
+# _thsd(thsh, clim, lyd, mst, mse) = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
 
-function ronset(eanoms, mst)
-    anom, anbf = eanoms.anom, eanoms.anbf
-    nmx, fan, ngx = anomfn(anom), first(anom), argfn(anom)
-    lnmx, snmx = nmx - nanmean((fan, anbf)), nmx - fan
+_categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
+
+function ronset(anoms, mst)
+    anom, anbf = anoms.anom, anoms.anbf
+    nmx, fan, ngx = maximum(anom), first(anom), argmax(anom)
+    lnmx, snmx = nmx - mean((fan, anbf)), nmx - fan
     ron = mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
     return ron
 end
 
-function rdecline(eanoms, mse) 
-    anft, lnx, nmx, lan, ngx, lnt = (eanoms.anft, eanoms.lnxt, anomfn(eanoms.anom), last(eanoms.anom), argfn(eanoms.anom), length(eanoms.anom))
-    lnmx, snmx = (nmx - nanmean((lan, anft)), nmx - lan)
+function rdecline(anoms, mse) 
+    anft, lnx, nmx, lan, ngx, lnt = (anoms.anft, anoms.lnxt, maximum(anoms.anom), last(anoms.anom), argmax(anoms.anom), length(anoms.anom))
+    lnmx, snmx = (nmx - mean((lan, anft)), nmx - lan)
     rdc = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
     return rdc
 end
 
 
-function _eventmetrics(sst, clim, thrs, lyd, evdates, mstarts, mends)
-    evanom, cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, length(mstarts)), 4)
-    
-    mhwout, catout = (zeros(size(sst)) for _ in 1:2)
-
+function _eventmetrics(sst, clim, thrs, lyd, evdate, mstarts, mends)
+    l = length(mstarts)
+    cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)
+    evanom = Vector{Vector{eltype(sst)}}(undef, l)
+    stdate, endate = ntuple(_ -> Vector{Date}(undef, l), 2) 
     for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
-        eanoms = anoms(sst, clim, thrs, lyd, mst, mse)
+        eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
         evanom[m] = eanoms.anom
-        cats[m] = categorys(eanoms)
+        cats[m] = _categorys(eanoms)
         rons[m] = ronset(eanoms, mst)
         rdcs[m] = rdecline(eanoms, mse)
-        mhwout[mst:mse] = eanoms.anom
-        catout[mst:mse] .= cats[m]
+        stdate[m] = evdate[mst]
+        endate[m] = evdate[mse]
     end
-    return mhwout, catout, evanom, rons, rdcs, cats
+    return evanom, rons, rdcs, cats, stdate, endate
 end
+
 
 """
     Version for single vector which could be part of a loop if we do the values of one pixel all the way to the end.
@@ -255,35 +261,86 @@ end
 """
 eventmetrics(msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.dates, mstartsxs, mendsxs) 
 
-# review from here.
-
-function _meanmetrics(events, metrics, fullyears)
+function meanmetrics(evanom, rons, rdec, fullyears)
     lfy = length(fullyears)
-    # metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
-    meanmets = map(nanmean, (events.meananom, events.cumanom, events.ronset, events.rdecline, events.durations))
-    meanmax = nanmaximum(events.maxanom)
-    meandays = /(nansum(events.durations), lfy)
-    meanfreq = /(length(events.durations), lfy)
-    mmets =  NamedTuple{metrics}((meanmets..., meanmax, meandays, meanfreq))
-    return mmets
+     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    # Per Event Metrics
+     meanint = mean.(evanom)
+     cumint = sum.(evanom)
+     maxint = maximum.(evanom)
+     duration = length.(evanom)
+     varint = std.(evanom)
+    evmets = (; meanint, cumint, maxint, duration, varint)
+
+    # Overall Mean Metrics
+     mmeanint = mean(Iterators.flatten(evanom))
+     mcumint = mean(cumint)
+     mmaxint = maximum(Iterators.flatten(evanom))
+     mronset = mean(rons)
+     mrdecline = mean(rdec)
+     mduration = mean(length.(evanom))
+     mdays = sum(duration) / lfy
+     mfrequency = length(duration) / lfy
+    
+    meanmets = (; mmeanint, mcumint, mmaxint,
+        mronset, mrdecline, mduration, mdays)
+
+    return meanmets, evmets
 end
 
-function annualmetrics(events, metrics, fullyears)
+
+function annualmetrics(evanom, stdate, endate, ronset, rdecline, fullyears)
     lfy = length(fullyears)
-    evyears = events.alldates .|> year
+    eyrs = stdate .|> year 
+     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
+    evanom = collect(flatten(evanom))
     annuals = ntuple(_ -> zeros(lfy), length(metrics))
     for ey in eachindex(fullyears)
         yearixs = findall(isequal(fullyears[ey]), evyears)
-        annuals[1][ey] = nanmean(events.meananom[yearixs]) # nanmean(anom[yearixs])
-        annuals[2][ey] = nanmean(events.cumanom[yearixs])  # nanmean(nansum(anom[yearixs]))
-        annuals[3][ey] = nanmean(events.ronset[yearixs])
-        annuals[4][ey] = nanmean(events.rdecline[yearixs])
-        annuals[5][ey] = nanmean(events.durations[yearixs])
-        annuals[6][ey] = nanmaximum(events.maxanom[yearixs])
-        annuals[7][ey] = nansum(events.durations[yearixs])
-        annuals[8][ey] = length(events.durations[yearixs])
+        yrix = findall(isequal(fullyears[ey]), eyrs)
+        if isempty(yearixs)
+            continue
+        end
+        annuals[1][ey] = mean(evanom[yearixs]) # nanmean(anom[yearixs])
+        annuals[2][ey] = mean(sum.(evanom[yearixs]))  # nanmean(nansum(anom[yearixs]))
+        annuals[3][ey] = mean(ronset[yrix])
+        annuals[4][ey] = mean(rdecline[yrix])
+        annuals[5][ey] = mean(length.(evanom[yearixs])) # duration
+        annuals[6][ey] = maximum(evanom[yearixs]) # maxint
+        annuals[7][ey] = sum(length.(evanom[yearixs])) # days
+        annuals[8][ey] = length(evanom[yearixs]) # frequency
     end
+    return NamedTuple{metrics}(annuals)
 end
+
+ function __trendv(metric)
+    trend, pval, pmet = ntuple(_ -> ones(1), 3)
+    m = size(metric, 1)
+    X = 1:m
+    y = replace(metric, NaN => missing)
+    data = DataFrame(X=X, Y=y)
+    lr = lm(@formula(Y ~ X), data)
+    trend[1] = coef(lr)[2]
+    pval[1] = coeftable(lr).cols[4][2]
+    pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
+    return trend[1], pval[1], pmet[1]
+ end
+
+
+function trends(annualmetrics)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    trds = (:trends, :pvalues, :pmetrics)
+    m = length(annualmetrics)
+    tss = ntuple(_ -> ones(m), 3)
+    for (m, metric) in enumerate(annualmetrics)
+        tss[1][m], tss[2][m], tss[3][m] = __trendv(metric)
+    end
+    tss = (NamedTuple{metrics}(x) for x in tss)
+    return (; zip(trds, tss)...)
+end
+
+
 
 function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}, cdate::StepRange{Date, Day}; threshold=threshold)
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
@@ -293,8 +350,9 @@ function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}
     return mhsst, mdate, mlyd, mask, clima, climq
 end
 
-function MHTemp(sst, sstdate, mdate, cdate; threshold=0.9)
-    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate, threshold), argmax, maximum)
+function edetect(sst, sstdate, mdate, cdate; threshold=0.9)
+    excdfn = >=
+    mhwin = MCTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     mexcd = exceed(mhwin)
     excdarray = mexcd[1]
     mstarts = startlabel(mexcd)
@@ -302,5 +360,12 @@ function MHTemp(sst, sstdate, mdate, cdate; threshold=0.9)
     mhxs = _indices(mstarts, mends, mindur, maxgap)
     msxs = startindices(mhxs.mstts, mhxs.hna)
     mexs = endindices(mhxs.mends, mhxs.hna)
-    mhwout, catout, pxanoms, r2cat = eventmetrics(mhwin, msxs, mexs)
+    evanom, rons, rdcs, cats, stdate, endate = eventmetrics(mhwin, msxs, mexs)
+    fullyears = unique(year.(mdate))
+    mmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
+    @show stdate, endate
+    anmets = annualmetrics(evanom, stdate, endate, rons, rdcs, fullyears)
+    trmets = trends(anmets)
+    return (mhanoms = evanom, mhexd = excdarray, categories = cats, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
+
 end
