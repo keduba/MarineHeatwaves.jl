@@ -94,9 +94,13 @@ function tresh(input::Matrix, drange, thresh)
     return outq
 end
 
-climv(input::Vector, drange) = [mean(findices(input, dd)) for dd in drange]
+function clim(input::Vector, drange)
+   return [mean(findices(input, dd)) for dd in drange]
+end
 
-treshv(input::Vector, drange, thresh) = [quantile(findices(input, dd), thresh) for dd in drange]
+function tresh(input::Vector, drange, thresh)
+    return [quantile(findices(input, dd), thresh) for dd in drange]
+end
 
 function clim(input::Matrix, drange)
     clima = [vec(mean(input[:,vcat(drange[i]...)], dims = 2)) for i in eachindex(drange)]
@@ -107,8 +111,8 @@ end
 
 
 function clthr(input::Vector, drange, thresh)
-    clima = climv(input, drange)
-    climq = treshv(input, drange, thresh)
+    clima = clim(input, drange)
+    climq = tresh(input, drange, thresh)
     _smoothdata!(clima)
     _smoothdata!(climq)
     return clima, climq
@@ -149,9 +153,22 @@ function exceed(x::MCTemp)
     mexc = _exceed(x.excfn, x.temp, x.thresh, x.lyday)
     N = ndims(x.temp)
     mexd = N == 1 ? diff(mexc) : diff(mexc, dims = N)
-    S = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
-    E = ifelse(isone(last(mexc)), count(==(-1), mexd) + 1, count(==(-1), mexd))
-   return mexc, mexd, E, S
+    if N == 1
+        mexd = diff(mexc)
+        ss = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
+        es = ifelse(isone(last(mexc)), count(==(-1), mexd) + 1, count(==(-1), mexd))
+    else 
+        mexd = diff(mexc, dims = N)
+        fvec = first.(eachrow(mexc))
+        lvec = last.(eachrow(mexc))
+    
+        ss = [count(==(1), row) for row in eachrow(mexd)]
+        es = [count(==(-1), row) for row in eachrow(mexd)]
+        
+        ss[isone.(fvec)] .+= 1
+        es[isone.(lvec)] .+= 1
+    end
+    return mexc, mexd, es, ss
 end
 
 function endlabel(exceed)
@@ -166,9 +183,13 @@ function endlabel(exceed)
    return menders
 end
 
+#function endlabel(exceed::Matrix)
+#    typeof(exceed[2]) == Vector ? endlabel(exceed) : 
+ #   [_endlabel(row) for row in eachrow(exceed)]
+#end
+
 function startlabel(exceed)
     mexc, mexd, _, S = exceed
-   
     mstarts = ones(Int, S)
     
     for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(mexd)))
@@ -176,7 +197,10 @@ function startlabel(exceed)
     end
     return mstarts
 end
-
+# startlabel(exceed) = _startlabel(exceed)
+#function startlabel(exceed::Matrix)
+ #   [_startlabel(row) for row in eachrow(exceed)]
+#end
 """
     The indices in the vector/matrix where the events begin and end.
 
@@ -190,20 +214,29 @@ function _indices(mstarts, menders, mindur, maxgap)
 end
 
 function startindices(mstts, hna)
-    mstartsxs =  ones(Int, sum(hna)+1)
+    mstartsxs = ones(Int, sum(hna)+1)
     mstartsxs[1] = first(mstts)
     mstartsxs[2:end] = mstts[2:end][hna] .+ 1
     return mstartsxs
 end
 
 function endindices(mends, hna)
-    mendsxs =  ones(Int, sum(hna)+1)
+    mendsxs = ones(Int, sum(hna)+1)
     mendsxs[end] = last(mends)
     mendsxs[begin:end-1] = mends[begin:end-1][hna]
     return mendsxs
 end
 
-
+#startindices.(mstts, hna)
+#endindices.(mends, hna)
+#
+#map((x, y) -> startindices(x, y), mstts, hna)
+#map((x, y) -> endindices(x, y), mends, hna)
+#
+#
+#[endindices(x, y) for (x, y) in zip(mends, hna)]
+#[startindices(x, y) for (x, y) in zip(mstts, hna)]
+#
 """
     This function calculates the anomalies for the temperature array and the clim/threshold.
 """
@@ -216,7 +249,6 @@ function _anoms(sst, clim, thsh, lyd, mst, mse)
     return (; anom, anbf, anft, lnxt, thsd)
 end
 
-# _thsd(thsh, clim, lyd, mst, mse) = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
 
 _categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
 
@@ -264,6 +296,9 @@ end
 """
 eventmetrics(msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.dates, mstartsxs, mendsxs) 
 
+# eventmetrics(msst, x, y)
+
+
 function meanmetrics(evanom, rons, rdec, fullyears)
     lfy = length(fullyears)
      metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
@@ -296,11 +331,12 @@ function annualmetrics(evanom, stdate, endate, ronset, rdecline, fullyears)
     lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
     evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
+    styr, enyr = year.(stdate), year.(endate)
     evanomf = collect(flatten(evanom))
     annuals = ntuple(_ -> zeros(lfy), length(metrics))
-    for ey in eachindex(fullyears)
-        yearixs = findall(isequal(fullyears[ey]), evyears)
-        yrix = [i for (i, (a, b)) in enumerate(zip(styr, enyr)) if a == ey || b == ey]
+    for (ey, yr) in enumerate(fullyears)
+        yearixs = findall(isequal(yr), evyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(styr, enyr)) if a == yr || b == yr]
         if isempty(yearixs)
             continue
         end
@@ -357,6 +393,7 @@ function edetect(sst, sstdate, mdate, cdate; threshold=0.9)
     mhwin = MCTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     mexcd = exceed(mhwin)
     excdarray = mexcd[1]
+    return mexcd
     mstarts = startlabel(mexcd)
     mends = endlabel(mexcd)
     mhxs = _indices(mstarts, mends, mindur, maxgap)
