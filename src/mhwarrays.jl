@@ -143,13 +143,18 @@ end
 _exceed(exfn, tempdata::Vector, threshdata::Vector, lyd) = exfn.(tempdata, threshdata[lyd])
 
 _exceed(exfn, tempdata::Matrix, threshdata::Matrix, lyd) = exfn.(tempdata, threshdata[:, lyd])
+
+function exceed(x::MCTemp)
+    mexc = _exceed(x.excfn, x.temp, x.thresh, x.lyday)
+    return mexc
+end
 """ 
 S == E || error("Something's not right with the starts and ends in the exceedance vector.")
 
 exceed(x::MCTemp) -> exceedance::VecOrMat, excdiff::VecOrMat, 
 Label the starts and ends using the exceedance and their differences.
 """
-function exceed(x::MCTemp)
+#=function exceed(x::MCTemp)
     mexc = _exceed(x.excfn, x.temp, x.thresh, x.lyday)
     N = ndims(x.temp)
     mexd = N == 1 ? diff(mexc) : diff(mexc, dims = N)
@@ -177,36 +182,89 @@ function endlabel(exceed)
     L = length(mexd) + 1
     menders[end] = L
 
-    for (i, (k,)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(mexd)))
+    for (i, (k, _)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(mexd)))
         menders[i] = k
     end
    return menders
 end
 
-#function endlabel(exceed::Matrix)
-#    typeof(exceed[2]) == Vector ? endlabel(exceed) : 
- #   [_endlabel(row) for row in eachrow(exceed)]
-#end
-
 function startlabel(exceed)
     mexc, mexd, _, S = exceed
     mstarts = ones(Int, S)
     
-    for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(mexd)))
+    for (i, (k, _)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(mexd)))
         isone(first(mexc)) ? mstarts[i+1] = Int(k) : mstarts[i] = Int(k)
     end
     return mstarts
 end
-# startlabel(exceed) = _startlabel(exceed)
-#function startlabel(exceed::Matrix)
- #   [_startlabel(row) for row in eachrow(exceed)]
-#end
+
+
+function startlabel(exceed) 
+    mexc, mexd, _, S = exceed
+    mstarts = [ones(Int, s) for s in S]
+    fvec = first.(eachrow(mexc))
+    fsts = mstarts[isone.(fvec)]
+    ntfs = mstarts[.!isone.(fvec)] 
+    nfsts = eachrow(mexd)[.!isone.(first.(eachrow(kedar[1])))]
+    fstss = eachrow(mexd)[isone.(first.(eachrow(kedar[1])))]
+    for (v, vrow) in ntfs
+         vrow[begin:end] = Int[i for (i, a) in enumerate(nfsts[v]) if isone(a)]
+    end
+    for (v, vrow) in fstss
+         vrow[begin+1:end] = Int[i for (i, a) in enumerate(fstss[v]) if isone(a)]
+    end
+    return mstarts
+end
+
+function endlabel(exceed) 
+ _, mexd, E, _ = exceed
+    mends = [ones(Int, e) for e in E]
+    l = size(mexd, ndims(mexd)) + 1
+    lvec = last.(eachrow(mexc))
+    for (v, vrow) in mends
+        vrow[begin:end] = Int[i for (i, a) in enumerate(eachrow(mexd)[v]) if isequal(-1, a)]
+     end
+    return mends
+end
+=#
+
+
+function __mylabeling(mexc, mexcd)
+        S = ifelse(isone(first(mexc)), count(==(1), mexcd) + 1, count(==(1), mexcd))
+        E = ifelse(isone(last(mexc)), count(==(-1), mexcd) + 1, count(==(-1), mexcd))
+        S == E || error("Something's not right with the starts and ends in the exceedance vector.")
+        mstarts, menders = ntuple(_ -> ones(Int, S), 2)
+        menders[end] = lastindex(mexc)
+        for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(mexcd)))
+                isone(first(mexc)) ? mstarts[i+1] = k : mstarts[i] = k
+        end
+        for (i, (k,)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(mexcd)))
+                menders[i] = k
+        end
+        return mstarts, menders
+end
+
+function _mylabeling(mexc::BitVector)
+    mexcd = diff(mexc)
+    mstarts, menders = __mylabeling(mexc, mexcd)
+    return mstarts, menders
+end
+
+function _mylabeling(mexc::BitMatrix) 
+    mexcd = diff(mexc, dims=2)
+    mstarts, menders = ([Int[] for _ in axes(mexc, 1)] for _ in 1:2)
+    for (m, (colc, cold)) in enumerate(zip(eachrow(mexc), eachrow(mexcd)))
+        mstarts[m], menders[m] = __mylabeling(colc, cold)
+    end
+    mstarts, menders
+end
+
 """
     The indices in the vector/matrix where the events begin and end.
 
 _indices(sts, ends, minduration, maximumgap) -> (stixs, enixs)::Tuple{2, Vector{Integer}}
 """
-function _indices(mstarts, menders, mindur, maxgap)
+#=function _indices(mstarts, menders, mindur, maxgap)
     oldurations = menders - mstarts
     mstts, mends = (ix[oldurations .≥ mindur] for ix in (mstarts, menders))
     hna = mstts[2:end] - mends[1:end-1] .> maxgap
@@ -226,17 +284,22 @@ function endindices(mends, hna)
     mendsxs[begin:end-1] = mends[begin:end-1][hna]
     return mendsxs
 end
+=#
 
-#startindices.(mstts, hna)
-#endindices.(mends, hna)
-#
-#map((x, y) -> startindices(x, y), mstts, hna)
-#map((x, y) -> endindices(x, y), mends, hna)
-#
-#
-#[endindices(x, y) for (x, y) in zip(mends, hna)]
-#[startindices(x, y) for (x, y) in zip(mstts, hna)]
-#
+function _indices(mstarts, menders, mindur, maxgap)
+    oldurations = menders - mstarts
+    mstts = [ix[od .≥ mindur] for (ix, od) in zip(mstarts, oldurations)]
+    mends = [ix[od .≥ mindur] for (ix, od) in zip(menders, oldurations)]
+    hna = [(ms[2:end] - me[1:end-1] .> maxgap) for (ms, me) in zip(mstts, mends)]
+    mstartsxs = [vcat(ms[2:end][hn] .+ 1) for (ms, hn) in zip(mstts, hna)]
+    mendersxs = [vcat(me[begin:end-1][hn] .+ 1) for (me, hn) in zip(mends, hna)]
+    for (mst, mse, ms, me) in zip(mstartsxs, mendersxs, mstts, mends)
+        pushfirst!(mst, first(ms))
+        push!(mse, last(me))
+    end
+    mstartsxs, mendersxs
+end
+
 """
     This function calculates the anomalies for the temperature array and the clim/threshold.
 """
@@ -296,9 +359,24 @@ end
 """
 eventmetrics(msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.dates, mstartsxs, mendsxs) 
 
-# eventmetrics(msst, x, y)
 
+function eventmetricsa(msst::MCTemp, mstartsxs, mendsxs)
+    outvectors = ntuple(_ -> Vector(undef, length(mstartsxs)), 8)
+    
+    for (m, (sstv, clim, thrs)) in enumerate(zip(eachrow(msst.temp), eachrow(msst.clima), eachrow(msst.thresh)))
+        innervec = _eventmetrics(sstv, clim, thrs, msst.lyday, msst.dates, mstartsxs[m], mendsxs[m])
+        outvectors[1][m] = innervec[1] # events
+        outvectors[2][m] = innervec[2] # mhwout
+        outvectors[3][m] = innervec[3] # catout
+        outvectors[4][m] = innervec[4] # cats
+        outvectors[5][m] = innervec[5] # rons
+        outvectors[6][m] = innervec[6] # rdcs
+        outvectors[7][m] = innervec[7] # rdcs
+        outvectors[8][m] = innervec[8] # rdcs
+    end
 
+    return outvectors
+end
 function meanmetrics(evanom, rons, rdec, fullyears)
     lfy = length(fullyears)
      metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
@@ -321,13 +399,14 @@ function meanmetrics(evanom, rons, rdec, fullyears)
      mfrequency = length(duration) / lfy
     
     meanmets = (; mmeanint, mcumint, mmaxint,
-        mronset, mrdecline, mduration, mdays)
+        mronset, mrdecline, mduration, 
+        mdays, mfrequency)
 
     return meanmets, evmets
 end
 
 
-function annualmetrics(evanom, stdate, endate, ronset, rdecline, fullyears)
+function annualmetrics(evanom,ronset, rdecline,  stdate, endate, fullyears)
     lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
     evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
@@ -378,7 +457,23 @@ function trends(annualmetrics)
     return (; zip(trds, tss)...)
 end
 
+function matevents(msst::MCTemp, mstartsxs, mendsxs)
 
+    evmets, meanmets, annmets, trendmets = ntuple(_ -> Vector(undef, length(mstartsxs)), 4)
+
+    fullyears = unique(year.(msst.dates))
+
+     for i in eachindex(mstartsxs)
+        evmets[i] = _eventmetrics(eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.dates, mstartsxs[i], mendsxs[i])
+        meanmets[i] = meanmetrics(evmets[i][1], evmets[i][2], evmets[i][3], fullyears)
+        annmets[i] = annualmetrics(evmets[i][1],evmets[i][2], evmets[i][3], evmets[i][5], evmets[i][6], fullyears)
+        trendmets = trends(annmets[i])
+    end
+    return evmets, meanmets, annmets, trendmets
+end
+
+
+#    
 
 function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}, cdate::StepRange{Date, Day}; threshold=threshold)
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
@@ -388,22 +483,61 @@ function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}
     return mhsst, mdate, mlyd, mask, clima, climq
 end
 
-function edetect(sst, sstdate, mdate, cdate; threshold=0.9)
+function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
     excdfn = >=
     mhwin = MCTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     mexcd = exceed(mhwin)
-    excdarray = mexcd[1]
-    return mexcd
-    mstarts = startlabel(mexcd)
-    mends = endlabel(mexcd)
-    mhxs = _indices(mstarts, mends, mindur, maxgap)
-    msxs = startindices(mhxs.mstts, mhxs.hna)
-    mexs = endindices(mhxs.mends, mhxs.hna)
+    # mstarts = startlabel(mexcd)
+    # mends = endlabel(mexcd)
+    mstarts, mends = _mylabeling(mexcd)
+    msxs, mexs = _indices(mstarts, mends, mindur, maxgap)
+    # msxs = startindices(mhxs.mstts, mhxs.hna)
+    # mexs = endindices(mhxs.mends, mhxs.hna)
     evanom, rons, rdcs, cats, stdate, endate, mhwtemp, cattemp = eventmetrics(mhwin, msxs, mexs)
     fullyears = unique(year.(mdate))
     mmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
     anmets = annualmetrics(evanom, stdate, endate, rons, rdcs, fullyears)
     trmets = trends(anmets)
-    return (mhtemp = mhwtemp, mhanoms = evanom, mhexd = excdarray, categories = cattemp, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
+    return (mhtemp = mhwtemp, mhanoms = evanom, mhexd = mexcd, categories = cattemp, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
 
 end
+
+
+function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
+    excdfn = >=
+    mhwin = MCTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
+    mexcd = exceed(mhwin)
+    mstarts, mends = _mylabeling(mexcd)
+    msxs, mexs = _indices(mstarts, mends, mindur, maxgap)
+    evmets, meanmets, annmets, trendmets = matevents(mhwin, msxs, mexs)
+    return evmets, meanmets, annmets, trendmets
+
+
+    #(mhtemp = mhwtemp, mhanoms = evanom, mhexd = mexcd, categories = cattemp, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
+
+end
+
+# function vecarr(sst, msst)
+# N = ndims(sst)
+# TN = Array{Union{T, Missing}, N}
+# TB = Array{Union{Bool, Missing}, N}
+# const NT = NamedTuple
+# mask
+# mhwtemp output: x,y,z
+# x, y = size(sst)
+# z = length(msst.dates)
+# zz = length(unique(year.(msst.dates))) # for the annual metrics
+#
+# trds = (:means, :trends, :pvalues, :pmetrics)
+# metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+# lt, lm = length(trds), length(metrics)
+
+# mhwexd = TB(missing, dims) # for vector sst
+# mhwtemp, mhwcat = ntuple(_ -> TN(missing,  ds), 2) # for sst as vector
+# annuals = NT{metrics}(ntuple(_ -> TN(missing, zz), lm))
+# mets = NT{trds}(ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, 1), lm)), lt))
+
+# mhwexd = TB(missing, ds, z)
+# mhwtemp, mhwcat = ntuple(_ -> TN(missing, ds, z), 2)
+# annuals = NT{metrics}(ntuple(_ -> TN(missing, ds, zz), lm))
+# mets = NT{trds}(ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, ds), lm)), lt))
