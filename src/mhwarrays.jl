@@ -240,6 +240,7 @@ function _eventmetrics(sst, clim, thrs, lyd, evdate, mstarts, mends)
     l = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)
     evanom = Vector{Vector{eltype(sst)}}(undef, l)
+    mhwout, catout = (zeros(size(sst)) for _ in 1:2)
     stdate, endate = ntuple(_ -> Vector{Date}(undef, l), 2) 
     for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
         eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
@@ -249,8 +250,10 @@ function _eventmetrics(sst, clim, thrs, lyd, evdate, mstarts, mends)
         rdcs[m] = rdecline(eanoms, mse)
         stdate[m] = evdate[mst]
         endate[m] = evdate[mse]
+        mhwout[mst:mse] = eanoms.anom
+        catout[mst:mse] .= cats[m]
     end
-    return evanom, rons, rdcs, cats, stdate, endate
+    return evanom, rons, rdcs, cats, stdate, endate, mhwout, catout
 end
 
 
@@ -291,25 +294,24 @@ end
 
 function annualmetrics(evanom, stdate, endate, ronset, rdecline, fullyears)
     lfy = length(fullyears)
-    eyrs = stdate .|> year 
-     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
     evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
-    evanom = collect(flatten(evanom))
+    evanomf = collect(flatten(evanom))
     annuals = ntuple(_ -> zeros(lfy), length(metrics))
     for ey in eachindex(fullyears)
         yearixs = findall(isequal(fullyears[ey]), evyears)
-        yrix = findall(isequal(fullyears[ey]), eyrs)
+        yrix = [i for (i, (a, b)) in enumerate(zip(styr, enyr)) if a == ey || b == ey]
         if isempty(yearixs)
             continue
         end
-        annuals[1][ey] = mean(evanom[yearixs]) # nanmean(anom[yearixs])
-        annuals[2][ey] = mean(sum.(evanom[yearixs]))  # nanmean(nansum(anom[yearixs]))
+        annuals[1][ey] = mean(evanomf[yearixs]) # correct nanmean(anom[yearixs])
+        annuals[2][ey] = mean(sum.(evanom[yrix]))  #  nanmean(nansum(anom[yearixs]))
         annuals[3][ey] = mean(ronset[yrix])
         annuals[4][ey] = mean(rdecline[yrix])
-        annuals[5][ey] = mean(length.(evanom[yearixs])) # duration
-        annuals[6][ey] = maximum(evanom[yearixs]) # maxint
-        annuals[7][ey] = sum(length.(evanom[yearixs])) # days
-        annuals[8][ey] = length(evanom[yearixs]) # frequency
+        annuals[5][ey] = mean(length.(evanom[yrix])) # duration
+        annuals[6][ey] = maximum(evanomf[yearixs]) # maxint
+        annuals[7][ey] = length(evanomf[yearixs]) # days
+        annuals[8][ey] = length(yrix) # frequency
     end
     return NamedTuple{metrics}(annuals)
 end
@@ -360,12 +362,11 @@ function edetect(sst, sstdate, mdate, cdate; threshold=0.9)
     mhxs = _indices(mstarts, mends, mindur, maxgap)
     msxs = startindices(mhxs.mstts, mhxs.hna)
     mexs = endindices(mhxs.mends, mhxs.hna)
-    evanom, rons, rdcs, cats, stdate, endate = eventmetrics(mhwin, msxs, mexs)
+    evanom, rons, rdcs, cats, stdate, endate, mhwtemp, cattemp = eventmetrics(mhwin, msxs, mexs)
     fullyears = unique(year.(mdate))
     mmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
-    @show stdate, endate
     anmets = annualmetrics(evanom, stdate, endate, rons, rdcs, fullyears)
     trmets = trends(anmets)
-    return (mhanoms = evanom, mhexd = excdarray, categories = cats, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
+    return (mhtemp = mhwtemp, mhanoms = evanom, mhexd = excdarray, categories = cattemp, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
 
 end
