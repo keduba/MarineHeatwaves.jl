@@ -74,7 +74,7 @@ function _subtemp(sst::Array, mhwix)
     xz = seamask(sst)
     xyz = CartesianIndices(xz)[xz]
     msst = sst[xyz, mhwix]
-    return msst, xz, xyz
+    return msst, xyz
 end
 
 function subtemp(sst, sstdate, evdate)
@@ -331,11 +331,11 @@ function rdecline(anoms, mse)
 end
 
 
-function _eventmetrics(sst, clim, thrs, lyd, evdate, mstarts, mends)
+function _eventmetrics!(mhwout, catout, sst, clim, thrs, lyd, evdate, mstarts, mends)
     l = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)
     evanom = Vector{Vector{eltype(sst)}}(undef, l)
-    mhwout, catout = (zeros(size(sst)) for _ in 1:2)
+    # mhwout, catout = (zeros(size(sst)) for _ in 1:2)
     stdate, endate = ntuple(_ -> Vector{Date}(undef, l), 2) 
     for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
         eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
@@ -357,7 +357,7 @@ end
 
     eventmetrics(sst, climthresh, startendsindices) -> Vector{Vector{T}}[events, mhwout, mhwcat]
 """
-eventmetrics(msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.dates, mstartsxs, mendsxs) 
+eventmetrics!(msms::MarineHW, msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msms.temp, msms.category, msst.temp, msst.clima, msst.thresh, msst.lyday, msst.dates, startsxs, mendsxs) 
 
 
 function eventmetricsa(msst::MCTemp, mstartsxs, mendsxs)
@@ -377,9 +377,11 @@ function eventmetricsa(msst::MCTemp, mstartsxs, mendsxs)
 
     return outvectors
 end
+
+
 function meanmetrics(evanom, rons, rdec, fullyears)
     lfy = length(fullyears)
-     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    # metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
     # Per Event Metrics
      meanint = mean.(evanom)
      cumint = sum.(evanom)
@@ -389,30 +391,30 @@ function meanmetrics(evanom, rons, rdec, fullyears)
     evmets = (; meanint, cumint, maxint, duration, varint)
 
     # Overall Mean Metrics
-     mmeanint = mean(Iterators.flatten(evanom))
-     mcumint = mean(cumint)
-     mmaxint = maximum(Iterators.flatten(evanom))
-     mronset = mean(rons)
-     mrdecline = mean(rdec)
-     mduration = mean(length.(evanom))
-     mdays = sum(duration) / lfy
-     mfrequency = length(duration) / lfy
+     meanint = mean(Iterators.flatten(evanom))
+     cumint = mean(cumint)
+     maxint = maximum(Iterators.flatten(evanom))
+     ronset = mean(rons)
+     rdecline = mean(rdec)
+     duration = mean(length.(evanom))
+     days = sum(duration) / lfy
+     frequency = length(duration) / lfy
     
-    meanmets = (; mmeanint, mcumint, mmaxint,
-        mronset, mrdecline, mduration, 
-        mdays, mfrequency)
+    meanmets = (; meanint, cumint, maxint,
+        ronset, rdecline, duration, 
+        days, frequency)
 
     return meanmets, evmets
 end
 
 
-function annualmetrics(evanom,ronset, rdecline,  stdate, endate, fullyears)
+function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears)
     lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
     evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
     styr, enyr = year.(stdate), year.(endate)
     evanomf = collect(flatten(evanom))
-    annuals = ntuple(_ -> zeros(lfy), length(metrics))
+     annuals = ntuple(_ -> zeros(lfy), length(metrics))
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), evyears)
         yrix = [i for (i, (a, b)) in enumerate(zip(styr, enyr)) if a == yr || b == yr]
@@ -428,7 +430,7 @@ function annualmetrics(evanom,ronset, rdecline,  stdate, endate, fullyears)
         annuals[7][ey] = length(evanomf[yearixs]) # days
         annuals[8][ey] = length(yrix) # frequency
     end
-    return NamedTuple{metrics}(annuals)
+    return annuals #NamedTuple{metrics}(annuals)
 end
 
  function __trendv(metric)
@@ -457,17 +459,26 @@ function trends(annualmetrics)
     return (; zip(trds, tss)...)
 end
 
-function matevents(msst::MCTemp, mstartsxs, mendsxs)
-
-    evmets, meanmets, annmets, trendmets = ntuple(_ -> Vector(undef, length(mstartsxs)), 4)
-
+function matevents(msms::MarineHW, msst::MCTemp, mstartsxs, mendsxs)
+    evmets = Vector(undef, length(mstartsxs))
     fullyears = unique(year.(msst.dates))
-
+    mask = msst.mask
      for i in eachindex(mstartsxs)
-        evmets[i] = _eventmetrics(eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.dates, mstartsxs[i], mendsxs[i])
-        meanmets[i] = meanmetrics(evmets[i][1], evmets[i][2], evmets[i][3], fullyears)
-        annmets[i] = annualmetrics(evmets[i][1],evmets[i][2], evmets[i][3], evmets[i][5], evmets[i][6], fullyears)
-        trendmets = trends(annmets[i])
+        evmeta = _eventmetrics!(eachrow(msms.temp), eachrow(msms.category), eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.dates, mstartsxs[i], mendsxs[i])
+        # evmeta = _eventmetrics(eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.dates, mstartsxs[i], mendsxs[i])
+
+        meanmets, evmets[i] = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears)
+        anmets = annualmetrics(evmeta[i][1],evmeta[i][2], evmeta[i][3], evmeta[i][5], evmeta[i][6], fullyears)
+        trmets = trends(anmets)
+        for m in keys(msms.annuals)
+            msms.annuals[m][mask] = anmets[m] # annual metrics
+            msms.means[m][mask] = meanmets[m] # mean metrics
+            msms.trends[m][mask] = trmets.trends[m]
+            msms.pvalues[m][mask] = trmets.pvalues[m]
+            msms.pmetrics[m][mask] = trmets.pmetrics[m]
+        end
+
+
     end
     return evmets, meanmets, annmets, trendmets
 end
@@ -499,7 +510,15 @@ function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
     anmets = annualmetrics(evanom, stdate, endate, rons, rdcs, fullyears)
     trmets = trends(anmets)
     return (mhtemp = mhwtemp, mhanoms = evanom, mhexd = mexcd, categories = cattemp, events = evmets, means = mmets, annuals = anmets, trend = trmets.trends, pvalues = trmets.pvalues, pmetrics = trmets.pmetrics, ronsets = rons, rdeclines = rdcs, startds = stdate, endds = endate)
-
+# allot the outputs to the output vectors
+    # Annuals
+    # for m in metrics
+    #     outannuals[m] .= anmets[m] # annual metrics
+    #     outmeans[m][1] = mmets[m] # mean metrics
+    #     outtrends[m][1] = trmets.trends[m]
+    #     outpvalues[m][1] = trmets.pvalues[m]
+    #     outpmetrics[m][1] = trmets.pmetrics[m]
+    # end
 end
 
 
@@ -517,27 +536,28 @@ function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
 
 end
 
-# function vecarr(sst, msst)
-# N = ndims(sst)
-# TN = Array{Union{T, Missing}, N}
-# TB = Array{Union{Bool, Missing}, N}
-# const NT = NamedTuple
-# mask
-# mhwtemp output: x,y,z
-# x, y = size(sst)
-# z = length(msst.dates)
-# zz = length(unique(year.(msst.dates))) # for the annual metrics
-#
-# trds = (:means, :trends, :pvalues, :pmetrics)
-# metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
-# lt, lm = length(trds), length(metrics)
+function vecarr(sst, mhwdate)
+    N = ndims(sst)
+    N ∈ (1,3) || throw("Oh heat! The dimension of the `sst` should be 1 or 3, we got $(N) instead!")
+    T = eltype(sst) 
+    TN = Array{Union{T, Missing}, N}
+    TM = Matrix{Union{T, Missing}}
+    TB = Array{Union{Bool, Missing}, N}
+    NT = NamedTuple
+   
+    trds = (:means, :trends, :pvalues, :pmetrics)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    lt, lm = length(trds), length(metrics)
+    x, y = ifelse(N == 3, size(sst), (1,1))
+    z = length(mhwdate)
+    zz = length(unique(year.(mhwdate))) 
+    ds = N == 1 ? z : (x, y)
 
-# mhwexd = TB(missing, dims) # for vector sst
-# mhwtemp, mhwcat = ntuple(_ -> TN(missing,  ds), 2) # for sst as vector
-# annuals = NT{metrics}(ntuple(_ -> TN(missing, zz), lm))
-# mets = NT{trds}(ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, 1), lm)), lt))
+    mhwexd = N == 1 ? TB(missing, ds) : TB(missing, ds..., z)
+    mhwtemp, mhwcat = N == 1 ? ntuple(_ -> TN(missing,  ds), 2) : ntuple(_ -> TN(missing, ds..., z), 2)
+    annuals = N == 1 ? NT{metrics}(ntuple(_ -> TN(missing, zz), lm)) : NT{metrics}(ntuple(_ -> TN(missing, ds..., zz), lm))
+    mets = N == 1 ? ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, N), lm)), lt) : ntuple(_ -> NT{metrics}(ntuple(_ -> TM(missing, ds...), lm)), lt)
 
-# mhwexd = TB(missing, ds, z)
-# mhwtemp, mhwcat = ntuple(_ -> TN(missing, ds, z), 2)
-# annuals = NT{metrics}(ntuple(_ -> TN(missing, ds, zz), lm))
-# mets = NT{trds}(ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, ds), lm)), lt))
+    return MarineHW(mhwtemp, mhwcat, mhwexd, annuals, mets...)
+
+end
