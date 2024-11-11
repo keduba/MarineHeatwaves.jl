@@ -5,7 +5,7 @@ using Dates
 using Statistics
 using GLM
 using NaNStatistics
-using Base.Iterators: flatten
+using Base.Iterators 
 using DataFrames
 
 

@@ -9,9 +9,9 @@ struct MHTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
     mask
     clima::VecOrMat
     thresh::VecOrMat
-    excfn::Function = ≥
-    argfn::Function = argmax
-    anomfn::Function = maximum
+     excfn # = ≥
+     argfn # = argmax
+    anomfn # = maximum
 end
 
 struct MCTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
@@ -21,9 +21,9 @@ struct MCTemp{T <: AbstractFloat, Ti <: Integer} <: MarineHeatWave
     mask
     clima::VecOrMat
     thresh::VecOrMat
-    excfn::Function = ≤ 
-    argfn::Function = argmin
-    anomfn::Function = minimum
+    excfn # = ≤ 
+    argfn # = argmin
+    anomfn # = minimum
 end
 
 
@@ -141,7 +141,7 @@ _exceed(exfn, tempdata::Vector, threshdata::Vector, lyd) = exfn.(tempdata, thres
 
 _exceed(exfn, tempdata::Matrix, threshdata::Matrix, lyd) = exfn.(tempdata, threshdata[:, lyd])
 
-function exceed(x::MCTemp)
+function exceed(x::Union{MCTemp, MHTemp})
     return _exceed(x.excfn, x.temp, x.thresh, x.lyday)
 end
 
@@ -232,7 +232,7 @@ end
 # DOUBLE CHECK THIS FOR THE COLD SPELL
 _categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
 
-function ronset(anoms, mst)
+function ronset(anoms, mst, anomfn, argfn)
     anom, anbf = anoms.anom, anoms.anbf
     nmx, fan, ngx = anomfn(anom), first(anom), argfn(anom)
     lnmx, snmx = nmx - mean((fan, anbf)), nmx - fan
@@ -240,7 +240,7 @@ function ronset(anoms, mst)
     return ron
 end
 
-function rdecline(anoms, mse) 
+function rdecline(anoms, mse, anomfn, argfn) 
     anft, lnx, nmx, lan, ngx, lnt = (anoms.anft, anoms.lnxt, anomfn(anoms.anom), last(anoms.anom), argfn(anoms.anom), length(anoms.anom))
     lnmx, snmx = (nmx - mean((lan, anft)), nmx - lan)
     rdc = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
@@ -248,17 +248,18 @@ function rdecline(anoms, mse)
 end
 
 
-function _eventmetrics!(mhwout, catout, sst, clim, thrs, lyd, evdate, mstarts, mends)
+function _eventmetrics(sst, clim, thrs, lyd, anomfn, argfn, evdate, mstarts, mends)
     l = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)
     evanom = Vector{Vector{eltype(sst)}}(undef, l)
     stdate, endate = ntuple(_ -> Vector{Date}(undef, l), 2) 
+    mhwout, catout = (zeros(size(sst)) for _ in 1:2)
     for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
         eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
         evanom[m] = eanoms.anom
         cats[m] = _categorys(eanoms)
-        rons[m] = ronset(eanoms, mst)
-        rdcs[m] = rdecline(eanoms, mse)
+        rons[m] = ronset(eanoms, mst, anomfn, argfn)
+        rdcs[m] = rdecline(eanoms, mse, anomfn, argfn)
         stdate[m] = evdate[mst]
         endate[m] = evdate[mse]
         mhwout[mst:mse] = eanoms.anom
@@ -273,7 +274,7 @@ end
 
     eventmetrics(sst, climthresh, startendsindices) -> Vector{Vector{T}}[events, mhwout, mhwcat]
 """
-eventmetrics(msms::MarineHW, msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics!(msms.temp, msms.category, msst.temp, msst.clima, msst.thresh, msst.lyday, msst.dates, mstartsxs, mendsxs) 
+eventmetrics(msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs) 
 
 function meanmetrics(evanom, rons, rdec, fullyears)
     lfy = length(fullyears)
@@ -304,7 +305,7 @@ end
 
 function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears)
     lfy = length(fullyears)
-    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
     styr, enyr = year.(stdate), year.(endate)
     evanomf = collect(flatten(evanom))
@@ -351,24 +352,24 @@ function trends(annualmetrics)
     return (; zip(trds, tss)...)
 end
 
-function matevents(msms::MarineHW, msst::MCTemp, mexc, mstartsxs, mendsxs)
+function matevents(msms::MarineHW, msst::Union{MCTemp, MHTemp}, mexc, mstartsxs, mendsxs)
     evmets = Vector(undef, length(mstartsxs))
     fullyears = unique(year.(msst.dates))
     mask = msst.mask
-    msms.exceed[mask] = mexc
-
+    msms.exceed[mask, :] = mexc
      for i in eachindex(mstartsxs)
-        evmeta = _eventmetrics!(eachrow(msms.temp), eachrow(msms.category), eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.dates, mstartsxs[i], mendsxs[i])
-
+        evmeta = _eventmetrics(eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
+        msms.temp[mask[i], :] = evmeta[7]
+        msms.category[mask[i], :] = evmeta[8]
         meanmets, evmets[i] = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears)
         anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
         trmets = trends(anmets)
         for m in keys(msms.annuals)
-            msms.annuals[m][mask] = anmets[m]
-            msms.means[m][mask] = meanmets[m]
-            msms.trends[m][mask] = trmets.trends[m]
-            msms.pvalues[m][mask] = trmets.pvalues[m]
-            msms.pmetrics[m][mask] = trmets.pmetrics[m]
+            msms.annuals[m][mask[i], :] = anmets[m]
+            msms.means[m][mask[i]] = meanmets[m]
+            msms.trends[m][mask[i]] = trmets.trends[m]
+            msms.pvalues[m][mask[i]] = trmets.pvalues[m]
+            msms.pmetrics[m][mask[i]] = trmets.pmetrics[m]
         end
     end
     return msms, evmets
@@ -383,20 +384,23 @@ function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}
 end
 
 function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
-    mhwin = MCTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)...)
+   excdfn = ≥ 
+    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     msms = vecarr(sst, mdate)
     mexc = exceed(mhwin)
-    msms.exceed = mexc
     msxs, mexs = _mylabeling(mexc)
-    evanom, rons, rdcs, cats, stdate, endate  = eventmetrics(msms, mhwin, msxs, mexs)
+    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout  = eventmetrics(mhwin, msxs, mexs)
     fullyears = unique(year.(mdate))
     meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
     anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
     trmets = trends(anmets)
+    msms.exceed .= mexc
+    msms.temp .= mhwout
+    msms.category .= catout
     # Annuals
     for m in keys(msms.annuals)
-        msms.annuals[m] = anmets[m]
-        msms.means[m] = meanmets[m]
+        msms.annuals[m][begin:end] = anmets[m]
+        msms.means[m] .= meanmets[m]
         msms.trends[m][1] = trmets.trends[m]
         msms.pvalues[m][1] = trmets.pvalues[m]
         msms.pmetrics[m][1] = trmets.pmetrics[m]
@@ -407,7 +411,7 @@ end
 
 function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
     excdfn = >=
-    mhwin = MCTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
+    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     msms = vecarr(sst, mdate)
     mexc = exceed(mhwin)
     msxs, mexs = _mylabeling(mexc)
@@ -425,7 +429,7 @@ function vecarr(sst, mhwdate)
     NT = NamedTuple
    
     trds = (:means, :trends, :pvalues, :pmetrics)
-    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maximum, :days, :frequency)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     lt, lm = length(trds), length(metrics)
     x, y = ifelse(N == 3, size(sst), (1,1))
     z = length(mhwdate)
@@ -439,4 +443,4 @@ function vecarr(sst, mhwdate)
     return MarineHW(mhwtemp, mhwcat, mhwexd, annuals, mets...)
 end
 
-# eventtable(eventanoms) = 
+# eventtable(eventanoms)  
