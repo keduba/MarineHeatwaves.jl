@@ -158,9 +158,11 @@ function startlabel(mexd)
     mstarts = Int[i for (i, m) in enumerate(mexd) if isone(m)]
     return mstarts
 end
-
-function _mylabeling(mexc::BitVector)
+#=function _mylabeling(mexc::BitVector)
     mexd = diff(mexc)
+    ss = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
+    es = ifelse(isone(last(mexc)), count(==(-1), mexd) + 1, count(==(-1), mexd))
+    ss == es || throw("Tengo frio! Something's off with the starts and ends in the `_mylabeling`")
     mstarts = startlabel(mexd)
     menders = endlabel(mexd)
     mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
@@ -171,8 +173,12 @@ end
 
 function _mylabeling(mexc::BitMatrix) 
     mexd = diff(mexc, dims=2)
-    ss = [count(==(1), row) for row in eachrow(mexd)]
-    es = [count(==(-1), row) for row in eachrow(mexd)]
+    f(mexc, mexd) = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
+    f2(mexc, mexd) = ifelse(isone(last(mexc)), count(==(-1), mexd) + 1, count(==(-1), mexd))
+    # ss = [f(rwc, rwd) for (rwc, rwd) in eachrow(mexd)]
+    # es = [count(==(-1), row) for row in eachrow(mexd)]
+    ss = map((x, y) -> f(x, y), eachrow(mexc), eachrow(mexd))
+    es = map((x, y) -> f2(x, y), eachrow(mexc), eachrow(mexd))
     ss == es || throw("Tengo frio! Something's off with the starts and ends in the `_mylabeling`")
     
     mstarts, menders = ntuple(_ -> [ones(Int, e) for e in es], 2)
@@ -188,6 +194,45 @@ function _mylabeling(mexc::BitMatrix)
         mendsxs[s] = endindices(mends, hna)
     end
     mstartxs, mendsxs
+end=#
+
+function __mylabeling(mexc, mexcd)
+        S = ifelse(isone(first(mexc)), count(==(1), mexcd) + 1, count(==(1), mexcd))
+        E = ifelse(isone(last(mexc)), count(==(-1), mexcd) + 1, count(==(-1), mexcd))
+        S == E || error("Something's not right with the starts and ends in the exceedance vector.")
+        mstarts, menders = ntuple(_ -> ones(Int, S), 2)
+        menders[end] = lastindex(mexc)
+        for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(mexcd)))
+                isone(first(mexc)) ? mstarts[i+1] = k : mstarts[i] = k
+        end
+        for (i, (k,)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(mexcd)))
+                menders[i] = k
+        end
+        return mstarts, menders
+end
+
+function _mylabeling(mexc::BitVector)
+    mexcd = diff(mexc)
+    mstarts, menders = __mylabeling(mexc, mexcd)
+    mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
+    mstartxs = startindices(mstts, hna)
+    mendsxs = endindices(mends, hna)
+    return mstartxs, mendsxs
+end
+
+function _mylabeling(mexc::BitMatrix) 
+    mexcd = diff(mexc, dims=2)
+    mstarts, menders = ([Int[] for _ in axes(mexc, 1)] for _ in 1:2)
+    for (m, (colc, cold)) in enumerate(zip(eachrow(mexc), eachrow(mexcd)))
+        mstarts[m], menders[m] = __mylabeling(colc, cold)
+    end
+    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(mexc, 1)), 2)
+    for s in eachindex(mstarts, menders)
+        mstts, mends, hna = _indices(mstarts[s], menders[s], mindur, maxgap)
+        mstartxs[s] = startindices(mstts, hna)
+        mendsxs[s] = endindices(mends, hna)
+    end
+    return mstartxs, mendsxs
 end
 
 """
@@ -223,10 +268,11 @@ end
 function _anoms(sst, clim, thsh, lyd, mst, mse) 
     anom = sst[mst:mse] - clim[lyd[mst:mse]]
     thsd = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
-    anbf = sst[mst-1] - clim[lyd[mst-1]]
-    anft = sst[mse+1] - clim[lyd[mse+1]]
     lnxt = lastindex(sst)
-    return (; anom, anbf, anft, lnxt, thsd)
+    anbx, anfx = max(1, mst-1), min(lnxt, mse+1)
+    anbf = sst[anbx] - clim[lyd[anbx]]
+    anft = sst[anfx] - clim[lyd[anfx]]
+        return (; anom, anbf, anft, lnxt, thsd)
 end
 
 # DOUBLE CHECK THIS FOR THE COLD SPELL
@@ -274,7 +320,7 @@ end
 
     eventmetrics(sst, climthresh, startendsindices) -> Vector{Vector{T}}[events, mhwout, mhwcat]
 """
-eventmetrics(msst::MCTemp, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs) 
+eventmetrics(msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs) 
 
 function meanmetrics(evanom, rons, rdec, fullyears)
     lfy = length(fullyears)
@@ -292,9 +338,9 @@ function meanmetrics(evanom, rons, rdec, fullyears)
      maxint = maximum(Iterators.flatten(evanom))
      ronset = mean(rons)
      rdecline = mean(rdec)
-     duration = mean(length.(evanom))
-     days = sum(duration) / lfy
      frequency = length(duration) / lfy
+     days = sum(duration) / lfy
+     duration = mean(length.(evanom))
     
     meanmets = (; meanint, cumint, maxint,
         ronset, rdecline, duration, 
@@ -306,9 +352,9 @@ end
 function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears)
     lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
-    evyears = collect(flatten(map((x,y) -> x:y, stdate, endate))) .|> year
+    evyears = collect(Iterators.flatten(map((x,y) -> x:y, stdate, endate))) .|> year
     styr, enyr = year.(stdate), year.(endate)
-    evanomf = collect(flatten(evanom))
+    evanomf = collect(Iterators.flatten(evanom))
     annuals = ntuple(_ -> zeros(lfy), length(metrics))
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), evyears)
@@ -352,16 +398,25 @@ function trends(annualmetrics)
     return (; zip(trds, tss)...)
 end
 
-function matevents(msms::MarineHW, msst::Union{MCTemp, MHTemp}, mexc, mstartsxs, mendsxs)
-    evmets = Vector(undef, length(mstartsxs))
+function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
+    mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)
     fullyears = unique(year.(msst.dates))
     mask = msst.mask
+    x, y = size(msms.temp)
+    climout, threshout = ntuple(_ -> similar(msms.temp, x, y, 366), 2)
     msms.exceed[mask, :] = mexc
-     for i in eachindex(mstartsxs)
+    for i in eachindex(mstartsxs)
         evmeta = _eventmetrics(eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
+        cats[i] = evmeta[4]
         msms.temp[mask[i], :] = evmeta[7]
         msms.category[mask[i], :] = evmeta[8]
-        meanmets, evmets[i] = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears)
+        climout[mask[i], :] = eachrow(msst.clima)[i]
+        threshout[mask[i], :] = eachrow(msst.thresh)[i]
+        meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears)
+        rons[i], rdcs[i], sdt[i], edt[i] = evmeta[2], evmeta[3], evmeta[5], evmeta[6]
+        rws[i] =  repeat([mask[i][1]], length(evmeta[2]))
+        cls[i] =  repeat([mask[i][2]], length(evmeta[2]))
+        mni[i], cmi[i], mxi[i], drt[i], vri[i] = evmets
         anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
         trmets = trends(anmets)
         for m in keys(msms.annuals)
@@ -372,10 +427,53 @@ function matevents(msms::MarineHW, msst::Union{MCTemp, MHTemp}, mexc, mstartsxs,
             msms.pmetrics[m][mask[i]] = trmets.pmetrics[m]
         end
     end
-    return msms, evmets
+    
+    edf = (MeanInt = reduce(vcat, mni), CumInt = reduce(vcat, cmi), MaxInt = reduce(vcat, mxi), Duration = reduce(vcat, drt), Category = reduce(vcat, cats), ROnset = reduce(vcat, rons), RDecline = reduce(vcat, rdcs), VarInt = reduce(vcat, vri), StartDate = reduce(vcat, sdt), EndDate = reduce(vcat, edt), Xind = reduce(vcat, rws), Yind = reduce(vcat, cls))
+
+    return msms, edf, climout, threshout 
+end
+
+
+function testarrays(sst, sstdate)
+        errmsgdims = "Dimensions of temperature array and time do not match: "
+        size(sst, ndims(sst)) == size(sstdate, ndims(sstdate)) || throw(DimensionMismatch("$(errmsgdims) temperature: $(size(sst, ndims(sst))), time: $(size(sstdate, ndims(sstdate)))."))
+end
+
+function testdates(sstdate, mhwdate, climdate)
+        errmsglen = "The end should be greater than the start: "
+        errmsgform = "The date should be either a string as in 'yyyy-mm-dd' -> '1990-01-02' or a date as in `Date(yyyy,mm,dd)` -> `Date(1990,3,12)`."
+        errmsgrange = "TimeError: Period is outside temperature date period: "
+        # errmsglen2 = "The length of period is greater than the length of `sstdate`. Check: "
+        
+        # Format/type tests
+    (first(sstdate) isa String || first(sstdate) isa Date) || errmsgform
+
+    (first(climdate) isa String || first(climdate) isa Date) || errmsgform
+    (first(mhwdate) isa String || first(mhwdate) isa Date) || errmsgform
+            
+        # Assure dates are date objects
+        ymd = "yyyy-mm-dd"
+        sstdate = eltype(sstdate) == String ? range(Date(first(sstdate), ymd), Date(last(sstdate), ymd)) : sstdate
+        mhwdate = eltype(mhwdate) == String ? range(Date(first(mhwdate), ymd), Date(last(mhwdate), ymd)) : mhwdate
+    climdate = eltype(climdate) == String ? range(Date(first(climdate), ymd), Date(last(climdate), ymd)) : climdate
+
+        # Make sure the order of the dates is correct
+        first(sstdate) < last(sstdate) || errmsglen
+        first(mhwdate) < last(mhwdate) || errmsglen
+        first(climdate) < last(climdate) || errmsglen
+
+        # Range tests
+        first(mhwdate) ≥ first(sstdate) && last(mhwdate) ≤ last(sstdate) || error(errmsgrange, mhwdate)
+
+        first(climdate) ≥ first(sstdate) && last(climdate) ≤ last(sstdate) || error(errmsgrange, climdate)
+
+       climdate = range(max(climdate[1]-Day(5), first(sstdate)), min(climdate[end]+Day(5), last(sstdate)))
+       return sstdate, mhwdate, climdate
 end
 
 function mhctemp(sst, sstdate::StepRange{Date, Day}, mdate::StepRange{Date, Day}, cdate::StepRange{Date, Day}; threshold=threshold)
+    sstdate, mdate, cdate = testdates(sstdate, mdate, cdate)
+    testarrays(sst, sstdate)
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
     clsst, mask, clyd = subtemp(sst, sstdate, cdate)
     dvec = daterange(clyd, winwidth)
@@ -405,8 +503,8 @@ function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
         msms.pvalues[m][1] = trmets.pvalues[m]
         msms.pmetrics[m][1] = trmets.pmetrics[m]
     end
-
-    return msms, evmets
+    edf = (MeanInt = evmets[1], CumInt = evmets[2], MaxInt = evmets[3], Duration = evmets[4], Category = cats, ROnset = rons, RDecline = rdcs, VarInt = evmets[5], StartDate = stdate, EndDate = endate)
+    return msms, edf, mhwin.clima, mhwin.thresh
 end
 
 function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
@@ -415,8 +513,8 @@ function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
     msms = vecarr(sst, mdate)
     mexc = exceed(mhwin)
     msxs, mexs = _mylabeling(mexc)
-    msms, evmets = matevents(msms, mhwin, mexc, msxs, mexs)
-    return msms, evmets
+    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
+    return msms, edf, cl, th
 end
 
 function vecarr(sst, mhwdate)
@@ -443,4 +541,51 @@ function vecarr(sst, mhwdate)
     return MarineHW(mhwtemp, mhwcat, mhwexd, annuals, mets...)
 end
 
-# eventtable(eventanoms)  
+function MarineHW(sst::Array, sdate, mdate, cdate; threshold=0.9)
+    excdfn, argfn, anomfn = ≥, argmax, maximum 
+    mhwin = MHTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
+    msms = vecarr(sst, mdate)
+    msms, edf, cl, th = edetect(mhwin, msms)
+    return msms, edf, cl, th
+end
+
+function MarineCS(sst::Array, sdate, mdate, cdate; threshold=0.1)
+    excdfn, argfn, anomfn = ≤, argmin, minimum 
+    mhwin = MCTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
+    msms = vecarr(sst, mdate)
+    msms, edf, cl, th = edetect(mhwin, msms)
+    return msms, edf, cl, th
+end
+
+function edetect(mhwin::MarineHeatWave, msms::MarineHW)
+        mexc = exceed(mhwin)
+        msxs, mexs = _mylabeling(mexc)
+        msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
+        return msms, edf, cl, th 
+end
+
+function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitVector, mstartsxs, mendsxs)
+    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout  = eventmetrics(msst, mstartsxs, mendsxs)
+    fullyears = unique(year.(msst.dates))
+    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
+    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
+    trmets = trends(anmets)
+    msms.exceed .= mexc
+    msms.temp .= mhwout
+    msms.category .= catout
+    # Annuals
+    for m in keys(msms.annuals)
+        msms.annuals[m][begin:end] = anmets[m]
+        msms.means[m] .= meanmets[m]
+        msms.trends[m][1] = trmets.trends[m]
+        msms.pvalues[m][1] = trmets.pvalues[m]
+        msms.pmetrics[m][1] = trmets.pmetrics[m]
+    end
+    edf = (MeanInt = evmets[1], CumInt = evmets[2], MaxInt = evmets[3], Duration = evmets[4], Category = cats, ROnset = rons, RDecline = rdcs, VarInt = evmets[5], StartDate = stdate, EndDate = endate)
+   return msms, edf, msst.clima, msst.thresh
+end
+
+evtable(mhw) = DataFrame(mhw[2])
+evclim(mhw) = mhw[3]
+evthresh(mhw) = mhw[4]
+

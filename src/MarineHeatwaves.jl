@@ -11,7 +11,14 @@ using DataFrames
 
 include("timefunctions.jl")
 include("mhwarrays.jl")
+
+
 export leapyearday
 export edetect
+export evtable
+export evclim
+export evthresh
+export MarineCS
+export MarineHW
 
 end
