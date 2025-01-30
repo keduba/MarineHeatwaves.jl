@@ -34,3 +34,51 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
 
     return msms, edf, climout, threshout
 end
+
+function mhctemp(sst, sstdate::StepRange{Date,Day}, mdate::StepRange{Date,Day}, cdate::StepRange{Date,Day}; threshold=threshold)
+    sstdate, mdate, cdate = testdates(sstdate, mdate, cdate)
+    testarrays(sst, sstdate)
+    mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
+    clsst, mask, clyd = subtemp(sst, sstdate, cdate)
+    dvec = daterange(clyd, winwidth)
+    clima, climq = clthr(clsst, dvec, threshold)
+    return mhsst, mdate, mlyd, mask, clima, climq
+end
+
+
+function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
+    excdfn = ≥
+    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
+    msms = vecarr(sst, mdate)
+    mexc = exceed(mhwin)
+    msxs, mexs = _mylabeling(mexc)
+    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(mhwin, msxs, mexs)
+    fullyears = unique(year.(mdate))
+    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
+    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
+    trmets = trends(anmets)
+    msms.exceed .= mexc
+    msms.temp .= mhwout
+    msms.category .= catout
+    # Annuals
+    for m in keys(msms.annuals)
+        msms.annuals[m][begin:end] = anmets[m]
+        msms.means[m] .= meanmets[m]
+        msms.trends[m][1] = trmets.trends[m]
+        msms.pvalues[m][1] = trmets.pvalues[m]
+        msms.pmetrics[m][1] = trmets.pmetrics[m]
+    end
+    edf = (MeanInt=evmets[1], CumInt=evmets[2], MaxInt=evmets[3], Duration=evmets[4], Category=cats, ROnset=rons, RDecline=rdcs, VarInt=evmets[5], StartDate=stdate, EndDate=endate)
+    return msms, edf, mhwin.clima, mhwin.thresh
+end
+
+
+function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
+    excdfn = >=
+    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
+    msms = vecarr(sst, mdate)
+    mexc = exceed(mhwin)
+    msxs, mexs = _mylabeling(mexc)
+    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
+    return msms, edf, cl, th
+end
