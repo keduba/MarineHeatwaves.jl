@@ -160,52 +160,6 @@ function testdates(sstdate, mhwdate, climdate)
     return sstdate, mhwdate, climdate
 end
 
-function mhctemp(sst, sstdate::StepRange{Date,Day}, mdate::StepRange{Date,Day}, cdate::StepRange{Date,Day}; threshold=threshold)
-    sstdate, mdate, cdate = testdates(sstdate, mdate, cdate)
-    testarrays(sst, sstdate)
-    mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
-    clsst, mask, clyd = subtemp(sst, sstdate, cdate)
-    dvec = daterange(clyd, winwidth)
-    clima, climq = clthr(clsst, dvec, threshold)
-    return mhsst, mdate, mlyd, mask, clima, climq
-end
-
-function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
-    excdfn = ≥
-    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
-    msms = vecarr(sst, mdate)
-    mexc = exceed(mhwin)
-    msxs, mexs = _mylabeling(mexc)
-    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(mhwin, msxs, mexs)
-    fullyears = unique(year.(mdate))
-    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
-    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
-    trmets = trends(anmets)
-    msms.exceed .= mexc
-    msms.temp .= mhwout
-    msms.category .= catout
-    # Annuals
-    for m in keys(msms.annuals)
-        msms.annuals[m][begin:end] = anmets[m]
-        msms.means[m] .= meanmets[m]
-        msms.trends[m][1] = trmets.trends[m]
-        msms.pvalues[m][1] = trmets.pvalues[m]
-        msms.pmetrics[m][1] = trmets.pmetrics[m]
-    end
-    edf = (MeanInt=evmets[1], CumInt=evmets[2], MaxInt=evmets[3], Duration=evmets[4], Category=cats, ROnset=rons, RDecline=rdcs, VarInt=evmets[5], StartDate=stdate, EndDate=endate)
-    return msms, edf, mhwin.clima, mhwin.thresh
-end
-
-function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
-    excdfn = >=
-    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
-    msms = vecarr(sst, mdate)
-    mexc = exceed(mhwin)
-    msxs, mexs = _mylabeling(mexc)
-    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
-    return msms, edf, cl, th
-end
-
 function vecarr(sst, mhwdate)
     N = ndims(sst)
     N ∈ (1, 3) || throw("Oh heat! The dimension of the `sst` should be 1 or 3, we got $(N) instead!")
@@ -228,50 +182,6 @@ function vecarr(sst, mhwdate)
     annuals = N == 1 ? NT{metrics}(ntuple(_ -> TN(missing, zz), lm)) : NT{metrics}(ntuple(_ -> TN(missing, ds..., zz), lm))
     mets = N == 1 ? ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, N), lm)), lt) : ntuple(_ -> NT{metrics}(ntuple(_ -> TM(missing, ds...), lm)), lt)
     return MarineHW(mhwtemp, mhwcat, mhwexd, annuals, mets...)
-end
-
-function MarineHW(sst::Array, sdate, mdate, cdate; threshold=0.9)
-    excdfn, argfn, anomfn = ≥, argmax, maximum
-    mhwin = MHTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
-    msms = vecarr(sst, mdate)
-    msms, edf, cl, th = edetect(mhwin, msms)
-    return msms, edf, cl, th
-end
-
-function MarineCS(sst::Array, sdate, mdate, cdate; threshold=0.1)
-    excdfn, argfn, anomfn = ≤, argmin, minimum
-    mhwin = MCTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
-    msms = vecarr(sst, mdate)
-    msms, edf, cl, th = edetect(mhwin, msms)
-    return msms, edf, cl, th
-end
-
-function edetect(mhwin::MarineHeatWave, msms::MarineHW)
-    mexc = exceed(mhwin)
-    msxs, mexs = _mylabeling(mexc)
-    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
-    return msms, edf, cl, th
-end
-
-function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitVector, mstartsxs, mendsxs)
-    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(msst, mstartsxs, mendsxs)
-    fullyears = unique(year.(msst.dates))
-    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
-    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
-    trmets = trends(anmets)
-    msms.exceed .= mexc
-    msms.temp .= mhwout
-    msms.category .= catout
-    # Annuals
-    for m in keys(msms.annuals)
-        msms.annuals[m][begin:end] = anmets[m]
-        msms.means[m] .= meanmets[m]
-        msms.trends[m][1] = trmets.trends[m]
-        msms.pvalues[m][1] = trmets.pvalues[m]
-        msms.pmetrics[m][1] = trmets.pmetrics[m]
-    end
-    edf = (MeanInt=evmets[1], CumInt=evmets[2], MaxInt=evmets[3], Duration=evmets[4], Category=cats, ROnset=rons, RDecline=rdcs, VarInt=evmets[5], StartDate=stdate, EndDate=endate)
-    return msms, edf, msst.clima, msst.thresh
 end
 
 evtable(mhw) = DataFrame(mhw[2])

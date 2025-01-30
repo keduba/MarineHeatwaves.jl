@@ -82,3 +82,47 @@ function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
     msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
     return msms, edf, cl, th
 end
+
+function edetect(mhwin::MarineHeatWave, msms::MarineHW)
+    mexc = exceed(mhwin)
+    msxs, mexs = _mylabeling(mexc)
+    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
+    return msms, edf, cl, th
+end
+
+function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitVector, mstartsxs, mendsxs)
+    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(msst, mstartsxs, mendsxs)
+    fullyears = unique(year.(msst.dates))
+    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
+    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
+    trmets = trends(anmets)
+    msms.exceed .= mexc
+    msms.temp .= mhwout
+    msms.category .= catout
+    # Annuals
+    for m in keys(msms.annuals)
+        msms.annuals[m][begin:end] = anmets[m]
+        msms.means[m] .= meanmets[m]
+        msms.trends[m][1] = trmets.trends[m]
+        msms.pvalues[m][1] = trmets.pvalues[m]
+        msms.pmetrics[m][1] = trmets.pmetrics[m]
+    end
+    edf = (MeanInt=evmets[1], CumInt=evmets[2], MaxInt=evmets[3], Duration=evmets[4], Category=cats, ROnset=rons, RDecline=rdcs, VarInt=evmets[5], StartDate=stdate, EndDate=endate)
+    return msms, edf, msst.clima, msst.thresh
+end
+
+function MarineHW(sst::Array, sdate, mdate, cdate; threshold=0.9)
+    excdfn, argfn, anomfn = ≥, argmax, maximum
+    mhwin = MHTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
+    msms = vecarr(sst, mdate)
+    msms, edf, cl, th = edetect(mhwin, msms)
+    return msms, edf, cl, th
+end
+
+function MarineCS(sst::Array, sdate, mdate, cdate; threshold=0.1)
+    excdfn, argfn, anomfn = ≤, argmin, minimum
+    mhwin = MCTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
+    msms = vecarr(sst, mdate)
+    msms, edf, cl, th = edetect(mhwin, msms)
+    return msms, edf, cl, th
+end
