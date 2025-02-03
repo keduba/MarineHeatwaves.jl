@@ -5,13 +5,16 @@ using Dates
 using Statistics
 using GLM
 using NaNStatistics
-using Base.Iterators 
+using Base.Iterators
 using DataFrames
 
 
 include("timefunctions.jl")
 include("mhwarrays.jl")
-
+include("mhw_clims.jl")
+include("mhw_events.jl")
+include("mhw_labels.jl")
+include("mhw_metrics.jl")
 
 export leapyearday
 export edetect
