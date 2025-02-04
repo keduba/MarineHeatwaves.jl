@@ -1,4 +1,8 @@
-
+# TODO:
+# -then the function that works for vectors should be able to work for matrices with minimal correction rather than using the base version.
+# - continue with the naming convention so that a variable can be tracked across different files
+# DONE:
+# -make all the variables that are row major to be column major. E.g. eachrow
 
 function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
     mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)
@@ -8,12 +12,12 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
     climout, threshout = ntuple(_ -> similar(msms.temp, x, y, 366), 2)
     msms.exceed[mask, :] = mexc
     for i in eachindex(mstartsxs)
-        evmeta = _eventmetrics(eachrow(msst.temp)[i], eachrow(msst.clima)[i], eachrow(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
+        evmeta = _eventmetrics(eachcol(msst.temp)[i], eachcol(msst.clima)[i], eachcol(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
         cats[i] = evmeta[4]
         msms.temp[mask[i], :] = evmeta[7]
         msms.category[mask[i], :] = evmeta[8]
-        climout[mask[i], :] = eachrow(msst.clima)[i]
-        threshout[mask[i], :] = eachrow(msst.thresh)[i]
+        climout[mask[i], :] = eachcol(msst.clima)[i]
+        threshout[mask[i], :] = eachcol(msst.thresh)[i]
         meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears)
         rons[i], rdcs[i], sdt[i], edt[i] = evmeta[2], evmeta[3], evmeta[5], evmeta[6]
         rws[i] = repeat([mask[i][1]], length(evmeta[2]))
