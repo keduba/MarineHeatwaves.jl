@@ -1,6 +1,5 @@
-# TODO 
+# TODO: 
 # rewrite all the variables to have a consistent name for tracking across the file.
-#
 #-
 
 using Base.Iterators: flatten
@@ -43,11 +42,11 @@ struct MarineHW{T,N} <: MarineHeatWave
     pmetrics::NamedTuple
 end
 
-
-const winwidth = 5
-const pctwidth = 31
-const mindur = 5
-const maxgap = 2
+# Defaults
+win_width = 5    # for the climatology
+pct_width = 31   # for smoothing data 
+min_dur = 5      # minimum duration of marine heatwave event
+max_gap = 2      # maximum gap between successive marine heatwave event
 
 Base.length(fl::Base.Iterators.Flatten{<:AbstractVector{<:UnitRange}}) = sum(length, fl.it)
 
@@ -58,7 +57,7 @@ Base.IteratorSize(::Base.Iterators.Flatten{<:AbstractVector{<:UnitRange}}) = Bas
 
 Returns only sea areas. Optional dimension. For arrays, expected dimension is the 3rd dimension.
 """
-seamask(xy, dims=3) = dropdims(count(!isnan, xy, dims=dims) .> 0, dims=dims)
+seamask(sst, dims=3) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
 
 """
     _subtemp(sst::Array{T, N}, sstindex) -> subsst, mask indices
@@ -98,12 +97,6 @@ helper function to select subset a vector `av` with indices from a range `dr`.
 """
 function findices(av, dr)
     (av[i] for i in flatten(dr))
-end
-
-# Test suite for the temperature array and the date.
-function testarrays(sst, sstdate)
-    errmsgdims = "Dimensions of temperature array and time do not match: "
-    size(sst, ndims(sst)) == size(sstdate, ndims(sstdate)) || throw(DimensionMismatch("$(errmsgdims) temperature: $(size(sst, ndims(sst))), time: $(size(sstdate, ndims(sstdate)))."))
 end
 
 function vecarr(sst, mhwdate)

@@ -48,6 +48,13 @@ function daterange(lydd::Vector{T}, w::T) where {T<:Integer}
 end
 
 # Test suite for the date variables: temperature, marineheatwave and climatology
+
+# Test suite for the temperature array and the date.
+function testarrays(sst, sstdate)
+    errmsgdims = "Dimensions of temperature array and time do not match: "
+    size(sst, ndims(sst)) == size(sstdate, ndims(sstdate)) || throw(DimensionMismatch("$(errmsgdims) temperature: $(size(sst, ndims(sst))), time: $(size(sstdate, ndims(sstdate)))."))
+end
+
 function testdates(sstdate, mhwdate, climdate)
     errmsglen = "The end should be greater than the start: "
     errmsgform = "The date should be either a string as in 'yyyy-mm-dd' -> '1990-01-02' or a date as in `Date(yyyy,mm,dd)` -> `Date(1990,3,12)`."
