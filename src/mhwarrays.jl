@@ -82,51 +82,28 @@ function _subtemp(sst::Array, mhwix)
     return msst, mask
 end
 
+"""
+    subtemp(sst, sstdate, eventdate) -> eventsst, mask, eventleapyearday
+
+`subtemp` uses the `timeindices` and `_subtemp` to return array, landmask and leapyearday.
+"""
 function subtemp(sst, sstdate, evdate)
     mhwix, elyd = timeindices(sstdate, evdate)
     emsst, mask = _subtemp(sst, mhwix)
     return emsst, mask, elyd
 end
 
+"""
+helper function to select subset a vector `av` with indices from a range `dr`.
+"""
 function findices(av, dr)
     (av[i] for i in flatten(dr))
 end
 
+# Test suite for the temperature array and the date.
 function testarrays(sst, sstdate)
     errmsgdims = "Dimensions of temperature array and time do not match: "
     size(sst, ndims(sst)) == size(sstdate, ndims(sstdate)) || throw(DimensionMismatch("$(errmsgdims) temperature: $(size(sst, ndims(sst))), time: $(size(sstdate, ndims(sstdate)))."))
-end
-
-function testdates(sstdate, mhwdate, climdate)
-    errmsglen = "The end should be greater than the start: "
-    errmsgform = "The date should be either a string as in 'yyyy-mm-dd' -> '1990-01-02' or a date as in `Date(yyyy,mm,dd)` -> `Date(1990,3,12)`."
-    errmsgrange = "TimeError: Period is outside temperature date period: "
-    # errmsglen2 = "The length of period is greater than the length of `sstdate`. Check: "
-
-    # Format/type tests
-    (first(sstdate) isa String || first(sstdate) isa Date) || errmsgform
-
-    (first(climdate) isa String || first(climdate) isa Date) || errmsgform
-    (first(mhwdate) isa String || first(mhwdate) isa Date) || errmsgform
-
-    # Assure dates are date objects
-    ymd = "yyyy-mm-dd"
-    sstdate = eltype(sstdate) == String ? range(Date(first(sstdate), ymd), Date(last(sstdate), ymd)) : sstdate
-    mhwdate = eltype(mhwdate) == String ? range(Date(first(mhwdate), ymd), Date(last(mhwdate), ymd)) : mhwdate
-    climdate = eltype(climdate) == String ? range(Date(first(climdate), ymd), Date(last(climdate), ymd)) : climdate
-
-    # Make sure the order of the dates is correct
-    first(sstdate) < last(sstdate) || errmsglen
-    first(mhwdate) < last(mhwdate) || errmsglen
-    first(climdate) < last(climdate) || errmsglen
-
-    # Range tests
-    first(mhwdate) ≥ first(sstdate) && last(mhwdate) ≤ last(sstdate) || error(errmsgrange, mhwdate)
-
-    first(climdate) ≥ first(sstdate) && last(climdate) ≤ last(sstdate) || error(errmsgrange, climdate)
-
-    climdate = range(max(climdate[1] - Day(5), first(sstdate)), min(climdate[end] + Day(5), last(sstdate)))
-    return sstdate, mhwdate, climdate
 end
 
 function vecarr(sst, mhwdate)
