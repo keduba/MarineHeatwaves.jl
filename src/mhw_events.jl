@@ -1,5 +1,6 @@
 # TODO:
 # -then the function that works for vectors should be able to work for matrices with minimal correction rather than using the base version.
+# change the names so that they are more descriptive
 # - continue with the naming convention so that a variable can be tracked across different files
 # DONE:
 # -make all the variables that are row major to be column major. E.g. eachrow
@@ -39,13 +40,13 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
     return msms, edf, climout, threshout
 end
 
-function mhctemp(sst, sstdate::StepRange{Date,Day}, mdate::StepRange{Date,Day}, cdate::StepRange{Date,Day}; threshold=threshold)
+function mhctemp(sst, sstdate::StepRange{Date,Day}, mdate::StepRange{Date,Day}, cdate::StepRange{Date,Day}; threshold=threshold, pwidth=pctwidth)
     sstdate, mdate, cdate = testdates(sstdate, mdate, cdate)
     testarrays(sst, sstdate)
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
     clsst, mask, clyd = subtemp(sst, sstdate, cdate)
     dvec = daterange(clyd, winwidth)
-    clima, climq = clthr(clsst, dvec, threshold)
+    clima, climq = clthr(clsst, dvec, threshold, pwidth)
     return mhsst, mdate, mlyd, mask, clima, climq
 end
 
