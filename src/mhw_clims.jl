@@ -6,7 +6,7 @@ tresh(indata::VecOrMat, daterange, threshold) -> climthresh::VecorMat
 
 function tresh(input::Matrix, drange, thresh)
     inp = deepcopy(input)
-    outthresh = [quantile!.(eachrow(inp[vcat(drange[d]...), :]), thresh) for d in eachindex(drange)]
+    outthresh = [quantile!.(eachcol(inp[vcat(drange[d]...), :]), thresh) for d in eachindex(drange)]
     outthresh[60] = mean((outthresh[59], outthresh[61]))
     return outthresh
 end
@@ -60,7 +60,7 @@ end
 
     This function modifies `ctarray` in place. `ctarray` is the climatology/threshold array. It calculates and returns the moving mean. `pw` is the smoothing window. By default, this value is `31`.
 """
-function _smoothdata!(ctarray, pw=pctwidth)
+function _smoothdata!(ctarray, pw=31)
     B = repeat(ctarray, 3)
     N = length(ctarray)
     lastindex(B) == 3N || error("The smoothing failed. Please check the `_smoothdata!` function.")
