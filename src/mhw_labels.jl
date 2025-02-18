@@ -1,16 +1,21 @@
+"""
+this is a helper function to calculate where the temperature exceeds the threshold. lyd is the leapyearday to create a longer vector so that threshdata is the same length as tempdata (temperature)
 
+"""
 _exceed(exfn, tempdata::Vector, threshdata::Vector, lyd) = exfn.(tempdata, threshdata[lyd])
 
 _exceed(exfn, tempdata::Matrix, threshdata::Matrix, lyd) = exfn.(tempdata, threshdata[:, lyd])
 
-function exceed(x::Union{MCTemp,MHTemp})
-    return _exceed(x.excfn, x.temp, x.thresh, x.lyday)
-end
+"""
+`exceed` is used to apply the exceedance function to the mhw or mcs types (`MCTemp` or `MHTemp`). It returns an array (matrix or vector). Should be a bitmatrix or bitvector or array of booleans.
 
-""" 
 exceed(x::MCTemp) -> exceedance::VecOrMat
 Label the starts and ends using the exceedance and their differences.
 """
+function exceed(x::Union{MCTemp,MHTemp})
+    return _exceed(x.excfn, x.temp, x.thresh, x.lyday)
+end
+# TODO: review how the labeling function works from start to end and refactor.
 function endlabel(mexd)
     menders = Int[i for (i, m) in enumerate(mexd) if isequal(-1, m)]
     return menders
