@@ -16,15 +16,28 @@ function exceed(x::Union{MCTemp,MHTemp})
     return _exceed(x.excfn, x.temp, x.thresh, x.lyday)
 end
 # TODO: review how the labeling function works from start to end and refactor.
-function endlabel(mexd)
-    menders = Int[i for (i, m) in enumerate(mexd) if isequal(-1, m)]
+
+# The endlabel and startlabel functions are vector based. They take a column of vectors of the exceedance and return the position.
+# This may also be accomplished using the pointer in SparseColumns.
+
+# TODO: how does the pointe in SparseCSC work? Could use it to replace this function.
+
+function endlabel(exceedance)
+    menders = Int[i for (i, m) in enumerate(exceedance) if isequal(-1, m)]
     return menders
 end
 
-function startlabel(mexd)
-    mstarts = Int[i for (i, m) in enumerate(mexd) if isone(m)]
+function startlabel(exceedance)
+    mstarts = Int[i for (i, m) in enumerate(exceedance) if isone(m)]
     return mstarts
 end
+
+# NOTE: HOW does the labeling work?
+#
+# First we obtain the points where the temperature is higher/less than the threshold using the `exceed` function. The result is a boolean array or bitarray (VecOrMat).
+# Next, we get the pointer/index (SparseCSC or `startlabel/endlabel` function.) where the values meet the condition (> | <)
+# Then, we take the difference within the column (so it is row difference). That means that the final row length should be n-1.
+#
 #=function _mylabeling(mexc::BitVector)
     mexd = diff(mexc)
     ss = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
