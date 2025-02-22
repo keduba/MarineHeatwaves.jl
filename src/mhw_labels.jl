@@ -4,7 +4,7 @@ this is a helper function to calculate where the temperature exceeds the thresho
 """
 _exceed(exfn, tempdata::Vector, threshdata::Vector, lyd) = exfn.(tempdata, threshdata[lyd])
 
-_exceed(exfn, tempdata::Matrix, threshdata::Matrix, lyd) = exfn.(tempdata, threshdata[:, lyd])
+_exceed(exfn, tempdata::Matrix, threshdata::Matrix, lyd) = exfn.(tempdata, threshdata[lyd, :])
 
 """
 `exceed` is used to apply the exceedance function to the mhw or mcs types (`MCTemp` or `MHTemp`). It returns an array (matrix or vector). Should be a bitmatrix or bitvector or array of booleans.
@@ -22,7 +22,7 @@ end
 
 # TODO: how does the pointe in SparseCSC work? Could use it to replace this function.
 
-function endlabel(exceedance)
+function endlabel(exceedance) # typeof(exceedance) == Vector
     menders = Int[i for (i, m) in enumerate(exceedance) if isequal(-1, m)]
     return menders
 end
@@ -38,10 +38,11 @@ end
 # Next, we get the pointer/index (SparseCSC or `startlabel/endlabel` function.) where the values meet the condition (> | <)
 # Then, we take the difference within the column (so it is row difference). That means that the final row length should be n-1.
 #
-#=function _mylabeling(mexc::BitVector)
-    mexd = diff(mexc)
-    ss = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
-    es = ifelse(isone(last(mexc)), count(==(-1), mexd) + 1, count(==(-1), mexd))
+
+#=function _mylabeling(exceedance::BitVector)
+    mexd = diff(exceedance)
+    ss = ifelse(isone(first(exceedance)), count(==(1), mexd) + 1, count(==(1), mexd))
+    es = ifelse(isone(last(exceedance)), count(==(-1), mexd) + 1, count(==(-1), mexd))
     ss == es || throw("Tengo frio! Something's off with the starts and ends in the `_mylabeling`")
     mstarts = startlabel(mexd)
     menders = endlabel(mexd)
@@ -51,14 +52,14 @@ end
     return mstartxs, mendsxs
 end
 
-function _mylabeling(mexc::BitMatrix) 
-    mexd = diff(mexc, dims=2)
-    f(mexc, mexd) = ifelse(isone(first(mexc)), count(==(1), mexd) + 1, count(==(1), mexd))
-    f2(mexc, mexd) = ifelse(isone(last(mexc)), count(==(-1), mexd) + 1, count(==(-1), mexd))
+function _mylabeling(exceedance::BitMatrix) 
+    mexd = diff(exceedance, dims=2)
+    f(exceedance, mexd) = ifelse(isone(first(exceedance)), count(==(1), mexd) + 1, count(==(1), mexd))
+    f2(exceedance, mexd) = ifelse(isone(last(exceedance)), count(==(-1), mexd) + 1, count(==(-1), mexd))
     # ss = [f(rwc, rwd) for (rwc, rwd) in eachrow(mexd)]
     # es = [count(==(-1), row) for row in eachrow(mexd)]
-    ss = map((x, y) -> f(x, y), eachrow(mexc), eachrow(mexd))
-    es = map((x, y) -> f2(x, y), eachrow(mexc), eachrow(mexd))
+    ss = map((x, y) -> f(x, y), eachrow(exceedance), eachrow(mexd))
+    es = map((x, y) -> f2(x, y), eachrow(exceedance), eachrow(mexd))
     ss == es || throw("Tengo frio! Something's off with the starts and ends in the `_mylabeling`")
 
     mstarts, menders = ntuple(_ -> [ones(Int, e) for e in es], 2)
@@ -67,7 +68,7 @@ function _mylabeling(mexc::BitMatrix)
         menders[m] = endlabel(mxd)
     end
 
-    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(mexc, 1)), 2)
+    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(exceedance, 1)), 2)
     for s in eachindex(mstarts, menders)
         mstts, mends, hna = _indices(mstarts[s], menders[s], mindur, maxgap)
         mstartxs[s] = startindices(mstts, hna)
@@ -76,37 +77,37 @@ function _mylabeling(mexc::BitMatrix)
     mstartxs, mendsxs
 end=#
 
-function __mylabeling(mexc, mexcd)
-    S = ifelse(isone(first(mexc)), count(==(1), mexcd) + 1, count(==(1), mexcd))
-    E = ifelse(isone(last(mexc)), count(==(-1), mexcd) + 1, count(==(-1), mexcd))
+function __mylabeling(exceedance, exdiff)
+    S = ifelse(isone(first(exceedance)), count(==(1), exdiff) + 1, count(==(1), exceedanced))
+    E = ifelse(isone(last(exceedance)), count(==(-1), exdiff) + 1, count(==(-1), exceedanced))
     S == E || error("Something's not right with the starts and ends in the exceedance vector.")
     mstarts, menders = ntuple(_ -> ones(Int, S), 2)
-    menders[end] = lastindex(mexc)
-    for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(mexcd)))
-        isone(first(mexc)) ? mstarts[i+1] = k : mstarts[i] = k
+    menders[end] = lastindex(exceedance)
+    for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(exdiff)))
+        isone(first(exceedance)) ? mstarts[i+1] = k : mstarts[i] = k
     end
-    for (i, (k,)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(mexcd)))
+    for (i, (k,)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(exdiff)))
         menders[i] = k
     end
     return mstarts, menders
 end
 
-function _mylabeling(mexc::BitVector)
-    mexcd = diff(mexc)
-    mstarts, menders = __mylabeling(mexc, mexcd)
+function _mylabeling(exceedance::BitVector)
+    exdiff = diff(exceedance)
+    mstarts, menders = __mylabeling(exceedance, exdiff)
     mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
     mstartxs = startindices(mstts, hna)
     mendsxs = endindices(mends, hna)
     return mstartxs, mendsxs
 end
 
-function _mylabeling(mexc::BitMatrix)
-    mexcd = diff(mexc, dims=2)
-    mstarts, menders = ([Int[] for _ in axes(mexc, 1)] for _ in 1:2)
-    for (m, (colc, cold)) in enumerate(zip(eachrow(mexc), eachrow(mexcd)))
+function _mylabeling(exceedance::BitMatrix)
+    exdiff = diff(exceedance, dims=2)
+    mstarts, menders = ([Int[] for _ in axes(exceedance, 1)] for _ in 1:2)
+    for (m, (colc, cold)) in enumerate(zip(eachrow(exceedance), eachrow(exdiff)))
         mstarts[m], menders[m] = __mylabeling(colc, cold)
     end
-    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(mexc, 1)), 2)
+    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(exceedance, 1)), 2)
     for s in eachindex(mstarts, menders)
         mstts, mends, hna = _indices(mstarts[s], menders[s], mindur, maxgap)
         mstartxs[s] = startindices(mstts, hna)
@@ -140,5 +141,3 @@ function endindices(mends, hna)
     mendsxs[begin:end-1] = mends[begin:end-1][hna]
     return mendsxs
 end
-
-
