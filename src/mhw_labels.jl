@@ -22,13 +22,13 @@ end
 
 # TODO: how does the pointe in SparseCSC work? Could use it to replace this function.
 
-function endlabel(exceedance) # typeof(exceedance) == Vector
-    menders = Int[i for (i, m) in enumerate(exceedance) if isequal(-1, m)]
+function endlabel(exdiff)# typeof(exceedance) == Vector
+    menders = Int[i for (i, m) in enumerate(exdiff) if isequal(-1, m)]
     return menders
 end
 
-function startlabel(exceedance)
-    mstarts = Int[i for (i, m) in enumerate(exceedance) if isone(m)]
+function startlabel(exdiff)
+    mstarts = Int[i for (i, m) in enumerate(exdiff) if isone(m)]
     return mstarts
 end
 
@@ -56,8 +56,6 @@ function _mylabeling(exceedance::BitMatrix)
     mexd = diff(exceedance, dims=2)
     f(exceedance, mexd) = ifelse(isone(first(exceedance)), count(==(1), mexd) + 1, count(==(1), mexd))
     f2(exceedance, mexd) = ifelse(isone(last(exceedance)), count(==(-1), mexd) + 1, count(==(-1), mexd))
-    # ss = [f(rwc, rwd) for (rwc, rwd) in eachrow(mexd)]
-    # es = [count(==(-1), row) for row in eachrow(mexd)]
     ss = map((x, y) -> f(x, y), eachrow(exceedance), eachrow(mexd))
     es = map((x, y) -> f2(x, y), eachrow(exceedance), eachrow(mexd))
     ss == es || throw("Tengo frio! Something's off with the starts and ends in the `_mylabeling`")
@@ -78,19 +76,62 @@ function _mylabeling(exceedance::BitMatrix)
 end=#
 
 function __mylabeling(exceedance, exdiff)
-    S = ifelse(isone(first(exceedance)), count(==(1), exdiff) + 1, count(==(1), exceedanced))
-    E = ifelse(isone(last(exceedance)), count(==(-1), exdiff) + 1, count(==(-1), exceedanced))
+    # first function checking that the length of starts and ends of events are similar
+    S = ifelse(isone(first(exceedance)), count(==(1), exdiff) + 1, count(==(1), exdiff))
+    E = ifelse(isone(last(exceedance)), count(==(-1), exdiff) + 1, count(==(-1), exdiff))
     S == E || error("Something's not right with the starts and ends in the exceedance vector.")
+    # second function getting the starts and ends based on the length of the events.
     mstarts, menders = ntuple(_ -> ones(Int, S), 2)
     menders[end] = lastindex(exceedance)
     for (i, (k,)) in enumerate(Iterators.filter(p -> isone(p.second), pairs(exdiff)))
         isone(first(exceedance)) ? mstarts[i+1] = k : mstarts[i] = k
     end
+
     for (i, (k,)) in enumerate(Iterators.filter(p -> isequal(-1, p.second), pairs(exdiff)))
         menders[i] = k
     end
     return mstarts, menders
 end
+
+# First condition: the first or last value in exceedance is 1.
+# if first(exceedance) == 1
+# S = count(==(1), exdiff) + 1
+# else
+# S = count(==(1), exdiff) 
+# end
+# 
+# if last(exceedance) == 1
+# E = count(==(-1), exdiff) + 1
+# else
+# E = count(==(-1), exdiff)
+# end
+# 
+#    isone(first(exceedance)) 
+#    ? mstarts[2:end] = startlabel(exdiff)
+#    : mstarts[begin:end] = startlabel(exdiff)
+
+# ss = isone(first(exceedance))
+#  ? count(==(1), exdiff) + 1
+#  : count(==(1), exdiff) 
+#  
+# mstarts = startlabel(exdiff)
+# if isone(first(exceedance))
+#  ss = count(==(1), exdiff) + 1
+#  mstarts = ones(Int, ss)
+#  mstarts[2:end] = startlabel(exdiff)
+# end
+#
+# menders = endlabel(exdiff)
+# if isone(last(exceedance))
+#  es = count(==(-1), exdiff) + 1
+#  menders = fill(lastindex(exceedance), es)
+#  menders[1:end-1] = endlabel(exdiff)
+# end
+#
+# return mstarts
+# 
+#
+
 
 function _mylabeling(exceedance::BitVector)
     exdiff = diff(exceedance)
