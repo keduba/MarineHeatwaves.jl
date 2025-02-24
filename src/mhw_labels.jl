@@ -22,12 +22,12 @@ end
 
 # TODO: how does the pointe in SparseCSC work? Could use it to replace this function.
 
-function endlabel(exdiff)# typeof(exceedance) == Vector
+function _endlabel(exdiff)# typeof(exceedance) == Vector
     menders = Int[i for (i, m) in enumerate(exdiff) if isequal(-1, m)]
     return menders
 end
 
-function startlabel(exdiff)
+function _startlabel(exdiff)
     mstarts = Int[i for (i, m) in enumerate(exdiff) if isone(m)]
     return mstarts
 end
@@ -93,19 +93,6 @@ function __mylabeling(exceedance, exdiff)
     return mstarts, menders
 end
 
-# First condition: the first or last value in exceedance is 1.
-# if first(exceedance) == 1
-# S = count(==(1), exdiff) + 1
-# else
-# S = count(==(1), exdiff) 
-# end
-# 
-# if last(exceedance) == 1
-# E = count(==(-1), exdiff) + 1
-# else
-# E = count(==(-1), exdiff)
-# end
-# 
 #    isone(first(exceedance)) 
 #    ? mstarts[2:end] = startlabel(exdiff)
 #    : mstarts[begin:end] = startlabel(exdiff)
@@ -114,23 +101,29 @@ end
 #  ? count(==(1), exdiff) + 1
 #  : count(==(1), exdiff) 
 #  
-# mstarts = startlabel(exdiff)
+# es = isone(last(exceedance))
+#  ? count(==(-1), exdiff) + 1
+#  : count(==(-1), exdiff) 
+# assert ss == es | "check the length of start and end"
+#
+# function startlabel(exdiff)
+# mstarts = _startlabel(exdiff)
 # if isone(first(exceedance))
 #  ss = count(==(1), exdiff) + 1
 #  mstarts = ones(Int, ss)
-#  mstarts[2:end] = startlabel(exdiff)
+#  mstarts[2:end] = _startlabel(exdiff)
 # end
-#
-# menders = endlabel(exdiff)
+# end
+# function endlabel(exdiff)
+# menders = _endlabel(exdiff)
 # if isone(last(exceedance))
 #  es = count(==(-1), exdiff) + 1
 #  menders = fill(lastindex(exceedance), es)
-#  menders[1:end-1] = endlabel(exdiff)
+#  menders[1:end-1] = _endlabel(exdiff)
+# end
 # end
 #
-# return mstarts
-# 
-#
+# return mstarts, menders
 
 
 function _mylabeling(exceedance::BitVector)
@@ -143,12 +136,12 @@ function _mylabeling(exceedance::BitVector)
 end
 
 function _mylabeling(exceedance::BitMatrix)
-    exdiff = diff(exceedance, dims=2)
-    mstarts, menders = ([Int[] for _ in axes(exceedance, 1)] for _ in 1:2)
+    exdiff = diff(exceedance, dims=1)
+    mstarts, menders = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
     for (m, (colc, cold)) in enumerate(zip(eachrow(exceedance), eachrow(exdiff)))
         mstarts[m], menders[m] = __mylabeling(colc, cold)
     end
-    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(exceedance, 1)), 2)
+    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(exceedance, 2)), 2)
     for s in eachindex(mstarts, menders)
         mstts, mends, hna = _indices(mstarts[s], menders[s], mindur, maxgap)
         mstartxs[s] = startindices(mstts, hna)
@@ -156,16 +149,30 @@ function _mylabeling(exceedance::BitMatrix)
     end
     return mstartxs, mendsxs
 end
-
+# function mylabeling(exceedance::Matrix)
+#     exdiff
+#    mstartsxs, mendersxs = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
+#     for x in axes(exdiff, 2)
+#         mstarts = startlabel -> multiple dispatch?
+#         mendser = endlabel -> ditto
+#
+#          mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
+#          mstartxs[x] = startindices(mstts, hna)
+#          mendsxs[x] = endindices(mends, hna)
+#      end  
+#
+# end
 """
     The indices in the vector/matrix where the events begin and end.
 
 _indices(sts, ends, minduration, maximumgap) -> (stixs, enixs)::Tuple{2, Vector{Integer}}
 """
 function _indices(mstarts, menders, mindur, maxgap)
-    oldurations = menders - mstarts
-    mstts, mends = (ix[oldurations.≥mindur] for ix in (mstarts, menders))
-    hna = mstts[2:end] - mends[1:end-1] .> maxgap
+    durations = menders - mstarts
+    # first the indices where the number of days > minimum duration
+    mstts, mends = (ix[durations.≥mindur] for ix in (mstarts, menders))
+    # then only those gap between starts and ends aremore than the specified maximum gap
+    hna = (mstts[2:end] - mends[1:end-1]) .> maxgap
     return (mstts, mends, hna)
 end
 
@@ -179,6 +186,6 @@ end
 function endindices(mends, hna)
     mendsxs = ones(Int, sum(hna) + 1)
     mendsxs[end] = last(mends)
-    mendsxs[begin:end-1] = mends[begin:end-1][hna]
+    mendsxs[1:end-1] = mends[1:end-1][hna]
     return mendsxs
 end
