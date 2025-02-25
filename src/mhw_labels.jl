@@ -96,7 +96,9 @@ end
 #    isone(first(exceedance)) 
 #    ? mstarts[2:end] = startlabel(exdiff)
 #    : mstarts[begin:end] = startlabel(exdiff)
-
+# 
+# WARN: No need for the following lines. Instead obtain the starts and ends and then check the length. if not equal, throw error. That's not all though.
+#
 # ss = isone(first(exceedance))
 #  ? count(==(1), exdiff) + 1
 #  : count(==(1), exdiff) 
@@ -106,62 +108,76 @@ end
 #  : count(==(-1), exdiff) 
 # assert ss == es | "check the length of start and end"
 #
-# function startlabel(exdiff)
-# mstarts = _startlabel(exdiff)
-# if isone(first(exceedance))
-#  ss = count(==(1), exdiff) + 1
-#  mstarts = ones(Int, ss)
-#  mstarts[2:end] = _startlabel(exdiff)
-# end
-# end
-# function endlabel(exdiff)
-# menders = _endlabel(exdiff)
-# if isone(last(exceedance))
-#  es = count(==(-1), exdiff) + 1
-#  menders = fill(lastindex(exceedance), es)
-#  menders[1:end-1] = _endlabel(exdiff)
-# end
-# end
+function startlabel(exdiff, exceedance)
+    mstarts = _startlabel(exdiff)
+    if isone(first(exceedance))
+        ss = count(==(1), exdiff) + 1
+        mstarts = ones(Int, ss)
+        mstarts[2:end] = _startlabel(exdiff)
+    end
+    return mstarts
+end
+
+function endlabel(exdiff, exceedance)
+    menders = _endlabel(exdiff)
+    if isone(last(exceedance))
+        es = count(==(-1), exdiff) + 1
+        menders = fill(lastindex(exceedance), es)
+        menders[1:end-1] = _endlabel(exdiff)
+    end
+    return menders
+end
+
+
 #
-# return mstarts, menders
+# function _mylabeling(exceedance::BitVector)
+#     exdiff = diff(exceedance)
+#     mstarts, menders = __mylabeling(exceedance, exdiff)
+#     mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
+#     mstartxs = startindices(mstts, hna)
+#     mendsxs = endindices(mends, hna)
+#     return mstartxs, mendsxs
+# end
 
-
-function _mylabeling(exceedance::BitVector)
+function _mylabeling(exceedance::BitVector, min_dur, max_gap)
     exdiff = diff(exceedance)
-    mstarts, menders = __mylabeling(exceedance, exdiff)
-    mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
+    mstarts = startlabel(exdiff, exceedance)
+    menders = endlabel(exdiff, exceedance)
+    mstts, mends, hna = _indices(mstarts, menders, min_dur, max_gap)
     mstartxs = startindices(mstts, hna)
     mendsxs = endindices(mends, hna)
     return mstartxs, mendsxs
 end
 
-function _mylabeling(exceedance::BitMatrix)
-    exdiff = diff(exceedance, dims=1)
-    mstarts, menders = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
-    for (m, (colc, cold)) in enumerate(zip(eachrow(exceedance), eachrow(exdiff)))
-        mstarts[m], menders[m] = __mylabeling(colc, cold)
-    end
-    mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(exceedance, 2)), 2)
-    for s in eachindex(mstarts, menders)
-        mstts, mends, hna = _indices(mstarts[s], menders[s], mindur, maxgap)
-        mstartxs[s] = startindices(mstts, hna)
-        mendsxs[s] = endindices(mends, hna)
-    end
-    return mstartxs, mendsxs
-end
-# function mylabeling(exceedance::Matrix)
-#     exdiff
-#    mstartsxs, mendersxs = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
-#     for x in axes(exdiff, 2)
-#         mstarts = startlabel -> multiple dispatch?
-#         mendser = endlabel -> ditto
-#
-#          mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
-#          mstartxs[x] = startindices(mstts, hna)
-#          mendsxs[x] = endindices(mends, hna)
-#      end  
-#
+# function _mylabeling(exceedance::BitMatrix, min_dur, max_gap)
+#     exdiff = diff(exceedance, dims=1)
+#     mstarts, menders = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
+#     for (m, (colc, cold)) in enumerate(zip(eachrow(exceedance), eachrow(exdiff)))
+#         mstarts[m], menders[m] = __mylabeling(colc, cold)
+#     end
+#     mstartxs, mendsxs = ntuple(_ -> typeof(mstarts)(undef, size(exceedance, 2)), 2)
+#     for s in eachindex(mstarts, menders)
+#         mstts, mends, hna = _indices(mstarts[s], menders[s], mindur, maxgap)
+#         mstartxs[s] = startindices(mstts, hna)
+#         mendsxs[s] = endindices(mends, hna)
+#     end
+#     return mstartxs, mendsxs
 # end
+
+function mylabeling(exceedance::Matrix)
+    exdiff = diff(exceedance, dims=1)
+    mstartsxs, mendersxs = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
+    for x in axes(exdiff, 2)
+        mstarts = startlabel(exdiff[x])
+        mendser = endlabel(exdiff[x])
+
+        mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
+        # can make the mindur, maxgap, thresholdand other exposables either a kwdef struct or a named tuple to make carrying them and modifying them 
+        mstartxs[x] = startindices(mstts, hna)
+        mendsxs[x] = endindices(mends, hna)
+    end
+
+end
 """
     The indices in the vector/matrix where the events begin and end.
 
