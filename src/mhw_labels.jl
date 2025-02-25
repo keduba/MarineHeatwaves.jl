@@ -93,26 +93,22 @@ function __mylabeling(exceedance, exdiff)
     return mstarts, menders
 end
 
-#    isone(first(exceedance)) 
-#    ? mstarts[2:end] = startlabel(exdiff)
-#    : mstarts[begin:end] = startlabel(exdiff)
-# 
-# WARN: No need for the following lines. Instead obtain the starts and ends and then check the length. if not equal, throw error. That's not all though.
-#
+# WARN: No need for the following lines. Instead obtain the starts and ends and then check the length. if not equal, throw error. That's not all though. They could be same length and still wrong.
+
 # ss = isone(first(exceedance))
 #  ? count(==(1), exdiff) + 1
 #  : count(==(1), exdiff) 
-#  
+
 # es = isone(last(exceedance))
 #  ? count(==(-1), exdiff) + 1
 #  : count(==(-1), exdiff) 
 # assert ss == es | "check the length of start and end"
-#
+
 function startlabel(exdiff, exceedance)
     mstarts = _startlabel(exdiff)
     if isone(first(exceedance))
         ss = count(==(1), exdiff) + 1
-        mstarts = ones(Int, ss)
+        mstarts = ones(Int32, ss)
         mstarts[2:end] = _startlabel(exdiff)
     end
     return mstarts
@@ -164,19 +160,19 @@ end
 #     return mstartxs, mendsxs
 # end
 
-function mylabeling(exceedance::Matrix)
+function mylabeling(exceedance::Matrix, min_dur, max_gap)
     exdiff = diff(exceedance, dims=1)
-    mstartsxs, mendersxs = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
+    mstartsxs, mendsxs = ([Int[] for _ in axes(exceedance, 2)] for _ in 1:2)
     for x in axes(exdiff, 2)
-        mstarts = startlabel(exdiff[x])
-        mendser = endlabel(exdiff[x])
+        mstarts = startlabel(exdiff[x], exceedance[x])
+        menders = endlabel(exdiff[x], exceedance[x])
 
-        mstts, mends, hna = _indices(mstarts, menders, mindur, maxgap)
+        mstts, mends, hna = _indices(mstarts, menders, min_dur, max_gap)
         # can make the mindur, maxgap, thresholdand other exposables either a kwdef struct or a named tuple to make carrying them and modifying them 
         mstartxs[x] = startindices(mstts, hna)
         mendsxs[x] = endindices(mends, hna)
     end
-
+    return mstartsxs, mendsxs
 end
 """
     The indices in the vector/matrix where the events begin and end.
