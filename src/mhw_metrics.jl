@@ -1,45 +1,4 @@
 """
-    This function calculates the anomalies for the temperature array and the clim/threshold.
-- anom: the anomaly
-- thsd: the threshold difference
-- anbx (index): for the rate of onset
-- anfx (index): for the rate of decline
-
-- anbf (value): for the rate of onset
-- anft (value): for the rate of decline
-"""
-
-function _anoms(sst, clim, thsh, lyd, mst, mse)
-    anom = sst[mst:mse] - clim[lyd[mst:mse]]
-    thsd = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
-    lnxt = lastindex(sst)
-    anbx, anfx = max(1, mst - 1), min(lnxt, mse + 1)
-    anbf = sst[anbx] - clim[lyd[anbx]]
-    anft = sst[anfx] - clim[lyd[anfx]]
-    return (; anom, anbf, anft, lnxt, thsd)
-end
-
-# TODO: DOUBLE CHECK THIS FOR THE COLD SPELL
-# INFO: This is not where the issue lies.
-
-_categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
-
-function ronset(anoms, mst, anomfn, argfn)
-    anom, anbf = anoms.anom, anoms.anbf
-    nmx, fan, ngx = anomfn(anom), first(anom), argfn(anom)
-    lnmx, snmx = nmx - mean((fan, anbf)), nmx - fan
-    ron = mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
-    return ron
-end
-
-function rdecline(anoms, mse, anomfn, argfn)
-    anft, lnx, nmx, lan, ngx, lnt = (anoms.anft, anoms.lnxt, anomfn(anoms.anom), last(anoms.anom), argfn(anoms.anom), length(anoms.anom))
-    lnmx, snmx = (nmx - mean((lan, anft)), nmx - lan)
-    rdc = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
-    return rdc
-end
-
-"""
 `_eventmetrics` is the base function for calculating the events in each pixel. Since each pixel has potentially many events, we create vectors to hold each output. It returns:
 - category
 - rate of onset
@@ -80,12 +39,12 @@ end
 """
 eventmetrics(msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
 
-function meanmetrics(evanom, rons, rdec, fullyears)
+function meanmetrics(evanom, rons, rdec, fullyears, anomfn)
     lfy = length(fullyears)
     # Per Event Metrics
     meanint = mean.(evanom)
     cumint = sum.(evanom)
-    maxint = maximum.(evanom)
+    maxint = anomfn.(evanom)
     duration = length.(evanom)
     varint = std.(evanom)
     evmets = (; meanint, cumint, maxint, duration, varint)
@@ -93,7 +52,7 @@ function meanmetrics(evanom, rons, rdec, fullyears)
     # Overall Mean Metrics
     meanint = mean(Iterators.flatten(evanom))
     cumint = mean(cumint)
-    maxint = maximum(Iterators.flatten(evanom))
+    maxint = anomfn(Iterators.flatten(evanom))
     ronset = mean(rons)
     rdecline = mean(rdec)
     frequency = length(duration) / lfy
