@@ -4,6 +4,47 @@
 # - continue with the naming convention so that a variable can be tracked across different files
 # DONE:
 # -make all the variables that are row major to be column major. E.g. eachrow
+"""
+    This function calculates the anomalies for the temperature array and the clim/threshold.
+- anom: the anomaly
+- thsd: the threshold difference
+- anbx (index): for the rate of onset
+- anfx (index): for the rate of decline
+
+- anbf (value): for the rate of onset
+- anft (value): for the rate of decline
+"""
+
+function _anoms(sst, clim, thsh, lyd, mst, mse)
+    anom = sst[mst:mse] - clim[lyd[mst:mse]]
+    thsd = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
+    lnxt = lastindex(sst)
+    anbx, anfx = max(1, mst - 1), min(lnxt, mse + 1)
+    anbf = sst[anbx] - clim[lyd[anbx]]
+    anft = sst[anfx] - clim[lyd[anfx]]
+    return (; anom, anbf, anft, lnxt, thsd)
+end
+
+# TODO: DOUBLE CHECK THIS FOR THE COLD SPELL
+# INFO: This is not where the issue lies.
+
+_categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
+
+function ronset(anoms, mst, anomfn, argfn)
+    anom, anbf = anoms.anom, anoms.anbf
+    nmx, fan, ngx = anomfn(anom), first(anom), argfn(anom)
+    lnmx, snmx = nmx - mean((fan, anbf)), nmx - fan
+    ron = mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
+    return ron
+end
+
+function rdecline(anoms, mse, anomfn, argfn)
+    anft, lnx, nmx, lan, ngx, lnt = (anoms.anft, anoms.lnxt, anomfn(anoms.anom), last(anoms.anom), argfn(anoms.anom), length(anoms.anom))
+    lnmx, snmx = (nmx - mean((lan, anft)), nmx - lan)
+    rdc = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
+    return rdc
+end
+
 
 function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
     mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)

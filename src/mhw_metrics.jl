@@ -1,5 +1,12 @@
 """
     This function calculates the anomalies for the temperature array and the clim/threshold.
+- anom: the anomaly
+- thsd: the threshold difference
+- anbx (index): for the rate of onset
+- anfx (index): for the rate of decline
+
+- anbf (value): for the rate of onset
+- anft (value): for the rate of decline
 """
 
 function _anoms(sst, clim, thsh, lyd, mst, mse)
@@ -12,7 +19,9 @@ function _anoms(sst, clim, thsh, lyd, mst, mse)
     return (; anom, anbf, anft, lnxt, thsd)
 end
 
-# DOUBLE CHECK THIS FOR THE COLD SPELL
+# TODO: DOUBLE CHECK THIS FOR THE COLD SPELL
+# INFO: This is not where the issue lies.
+
 _categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
 
 function ronset(anoms, mst, anomfn, argfn)
@@ -30,7 +39,19 @@ function rdecline(anoms, mse, anomfn, argfn)
     return rdc
 end
 
+"""
+`_eventmetrics` is the base function for calculating the events in each pixel. Since each pixel has potentially many events, we create vectors to hold each output. It returns:
+- category
+- rate of onset
+- rate of decline
+- event anomaly
+- start date
+- end date
+- the marine heatwave/coldspell vector (mhwout)
+- the category vector (catout)
 
+
+"""
 function _eventmetrics(sst, clim, thrs, lyd, anomfn, argfn, evdate, mstarts, mends)
     l = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)

@@ -169,7 +169,7 @@ function mylabeling(exceedance::Matrix, min_dur, max_gap)
 
         mstts, mends, hna = _indices(mstarts, menders, min_dur, max_gap)
         # can make the mindur, maxgap, thresholdand other exposables either a kwdef struct or a named tuple to make carrying them and modifying them 
-        mstartxs[x] = startindices(mstts, hna)
+        mstartsxs[x] = startindices(mstts, hna)
         mendsxs[x] = endindices(mends, hna)
     end
     return mstartsxs, mendsxs
