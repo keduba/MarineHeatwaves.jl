@@ -37,7 +37,9 @@ end
 
     eventmetrics(sst, climthresh, startendsindices) -> Vector{Vector{T}}[events, mhwout, mhwcat]
 """
-eventmetrics(msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
+eventmetrics(
+    msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs
+) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
 
 function meanmetrics(evanom, rons, rdec, fullyears, anomfn)
     lfy = length(fullyears)
@@ -84,7 +86,7 @@ function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears)
         annuals[3][ey] = mean(ronset[yrix])
         annuals[4][ey] = mean(rdecline[yrix])
         annuals[5][ey] = mean(length.(evanom[yrix])) # duration
-        annuals[6][ey] = maximum(evanomf[yearixs])   # maxint
+        annuals[6][ey] = anomfn(evanomf[yearixs])   # maxint
         annuals[7][ey] = length(evanomf[yearixs])    # days
         annuals[8][ey] = length(yrix)                # frequency
     end

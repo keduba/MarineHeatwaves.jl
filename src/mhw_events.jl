@@ -25,9 +25,6 @@ function _anoms(sst, clim, thsh, lyd, mst, mse)
     return (; anom, anbf, anft, lnxt, thsd)
 end
 
-# TODO: DOUBLE CHECK THIS FOR THE COLD SPELL
-# INFO: This is not where the issue lies.
-
 _categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
 
 function ronset(anoms, mst, anomfn, argfn)
@@ -45,6 +42,7 @@ function rdecline(anoms, mse, anomfn, argfn)
     return rdc
 end
 
+# TODO: Rather than number indices, use the tuple name so we know what variable is going where. That's the reason behind NameTuples in the first place.
 
 function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
     mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)
@@ -53,20 +51,23 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
     x, y = size(msms.temp)
     climout, threshout = ntuple(_ -> similar(msms.temp, x, y, 366), 2)
     msms.exceed[mask, :] = mexc
+
     for i in eachindex(mstartsxs)
         evmeta = _eventmetrics(eachcol(msst.temp)[i], eachcol(msst.clima)[i], eachcol(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
+        meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears, msst.anomfn)
         cats[i] = evmeta[4]
+        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
         msms.temp[mask[i], :] = evmeta[7]
         msms.category[mask[i], :] = evmeta[8]
         climout[mask[i], :] = eachcol(msst.clima)[i]
         threshout[mask[i], :] = eachcol(msst.thresh)[i]
-        meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears, msst.anomfn)
+
         rons[i], rdcs[i], sdt[i], edt[i] = evmeta[2], evmeta[3], evmeta[5], evmeta[6]
         rws[i] = repeat([mask[i][1]], length(evmeta[2]))
         cls[i] = repeat([mask[i][2]], length(evmeta[2]))
         mni[i], cmi[i], mxi[i], drt[i], vri[i] = evmets
-        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
         trmets = trends(anmets)
+
         for m in keys(msms.annuals)
             msms.annuals[m][mask[i], :] = anmets[m]
             msms.means[m][mask[i]] = meanmets[m]
@@ -74,6 +75,7 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
             msms.pvalues[m][mask[i]] = trmets.pvalues[m]
             msms.pmetrics[m][mask[i]] = trmets.pmetrics[m]
         end
+
     end
 
     edf = (MeanInt=reduce(vcat, mni), CumInt=reduce(vcat, cmi), MaxInt=reduce(vcat, mxi), Duration=reduce(vcat, drt), Category=reduce(vcat, cats), ROnset=reduce(vcat, rons), RDecline=reduce(vcat, rdcs), VarInt=reduce(vcat, vri), StartDate=reduce(vcat, sdt), EndDate=reduce(vcat, edt), Xind=reduce(vcat, rws), Yind=reduce(vcat, cls))
