@@ -60,7 +60,7 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
         msms.category[mask[i], :] = evmeta[8]
         climout[mask[i], :] = eachcol(msst.clima)[i]
         threshout[mask[i], :] = eachcol(msst.thresh)[i]
-        meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears)
+        meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears, msst.anomfn)
         rons[i], rdcs[i], sdt[i], edt[i] = evmeta[2], evmeta[3], evmeta[5], evmeta[6]
         rws[i] = repeat([mask[i][1]], length(evmeta[2]))
         cls[i] = repeat([mask[i][2]], length(evmeta[2]))
@@ -81,12 +81,12 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
     return msms, edf, climout, threshout
 end
 
-function mhctemp(sst, sstdate::StepRange{Date,Day}, mdate::StepRange{Date,Day}, cdate::StepRange{Date,Day}; threshold=threshold, pwidth=pctwidth)
+function mhctemp(sst, sstdate::StepRange{Date,Day}, mdate::StepRange{Date,Day}, cdate::StepRange{Date,Day}; threshold=threshold, pwidth=31, win_width=5)
     sstdate, mdate, cdate = testdates(sstdate, mdate, cdate)
     testarrays(sst, sstdate)
     mhsst, mask, mlyd = subtemp(sst, sstdate, mdate)
     clsst, mask, clyd = subtemp(sst, sstdate, cdate)
-    dvec = daterange(clyd, winwidth)
+    dvec = daterange(clyd, win_width)
     clima, climq = clthr(clsst, dvec, threshold, pwidth)
     return mhsst, mdate, mlyd, mask, clima, climq
 end
@@ -94,13 +94,13 @@ end
 
 function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
     excdfn = ≥
-    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
+    msst = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     msms = vecarr(sst, mdate)
-    mexc = exceed(mhwin)
-    msxs, mexs = _mylabeling(mexc)
-    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(mhwin, msxs, mexs)
+    mexc = exceed(msst)
+    msxs, mexs = _mylabeling(mexc, min_dur, max_gap)
+    evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(msst, msxs, mexs)
     fullyears = unique(year.(mdate))
-    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
+    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears, msst.anomfn)
     anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
     trmets = trends(anmets)
     msms.exceed .= mexc
@@ -115,31 +115,31 @@ function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
         msms.pmetrics[m][1] = trmets.pmetrics[m]
     end
     edf = (MeanInt=evmets[1], CumInt=evmets[2], MaxInt=evmets[3], Duration=evmets[4], Category=cats, ROnset=rons, RDecline=rdcs, VarInt=evmets[5], StartDate=stdate, EndDate=endate)
-    return msms, edf, mhwin.clima, mhwin.thresh
+    return msms, edf, msst.clima, msst.thresh
 end
 
 
 function edetect(sst::Array, sstdate, mdate, cdate; threshold=0.9)
     excdfn = >=
-    mhwin = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
+    msst = MHTemp(mhctemp(sst, sstdate, mdate, cdate; threshold)..., excdfn, argmax, maximum)
     msms = vecarr(sst, mdate)
-    mexc = exceed(mhwin)
-    msxs, mexs = _mylabeling(mexc)
-    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
+    mexc = exceed(msst)
+    msxs, mexs = _mylabeling(mexc, min_dur, max_gap)
+    msms, edf, cl, th = matevents(msms, msst, mexc, msxs, mexs)
     return msms, edf, cl, th
 end
 
-function edetect(mhwin::MarineHeatWave, msms::MarineHW)
-    mexc = exceed(mhwin)
-    msxs, mexs = _mylabeling(mexc)
-    msms, edf, cl, th = matevents(msms, mhwin, mexc, msxs, mexs)
+function edetect(msst::MarineHeatWave, msms::MarineHW)
+    mexc = exceed(msst)
+    msxs, mexs = _mylabeling(mexc, min_dur, max_gap)
+    msms, edf, cl, th = matevents(msms, msst, mexc, msxs, mexs)
     return msms, edf, cl, th
 end
 
 function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitVector, mstartsxs, mendsxs)
     evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(msst, mstartsxs, mendsxs)
     fullyears = unique(year.(msst.dates))
-    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears)
+    meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears, msst.anomfn)
     anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
     trmets = trends(anmets)
     msms.exceed .= mexc
@@ -159,16 +159,16 @@ end
 
 function MarineHW(sst::Array, sdate, mdate, cdate; threshold=0.9)
     excdfn, argfn, anomfn = ≥, argmax, maximum
-    mhwin = MHTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
+    msst = MHTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
     msms = vecarr(sst, mdate)
-    msms, edf, cl, th = edetect(mhwin, msms)
+    msms, edf, cl, th = edetect(msst, msms)
     return msms, edf, cl, th
 end
 
 function MarineCS(sst::Array, sdate, mdate, cdate; threshold=0.1)
     excdfn, argfn, anomfn = ≤, argmin, minimum
-    mhwin = MCTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
+    msst = MCTemp(mhctemp(sst, sdate, mdate, cdate; threshold)..., excdfn, argfn, anomfn)
     msms = vecarr(sst, mdate)
-    msms, edf, cl, th = edetect(mhwin, msms)
+    msms, edf, cl, th = edetect(msst, msms)
     return msms, edf, cl, th
 end
