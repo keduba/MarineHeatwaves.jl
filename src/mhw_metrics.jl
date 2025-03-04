@@ -41,6 +41,31 @@ eventmetrics(
     msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs
 ) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
 
+#=
+
+_eventmetrics(msst.temp::Vector, msst.clima::Vector, msst.thresh::Vector, msst.lyday::Vector, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
+
+# TODO: a more appropriate name for this function.
+- is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?
+
+eventmetrics(msst::MarineHeatwave{Vector, NamedTuple}) = _eventmetrics(msst.temp ...)
+
+eventmetrics(msst::MarineHeatwave{Matrix, NamedTuple})
+
+option 1. 
+mapslices(x,y,z -> _eventmetrics, msst.temp, msst.clima, msst.thresh)
+
+option 2.
+map(x -> expr, iterable)
+
+option 3. for loop
+
+for x in axes(msst.temp, 2)
+_eventmetrics(msst.temp[:, x], ...)
+end
+
+=#
+
 function meanmetrics(evanom, rons, rdec, fullyears, anomfn)
     lfy = length(fullyears)
     # Per Event Metrics
