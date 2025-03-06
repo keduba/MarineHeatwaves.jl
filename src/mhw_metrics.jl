@@ -43,25 +43,55 @@ eventmetrics(
 
 #=
 
-_eventmetrics(msst.temp::Vector, msst.clima::Vector, msst.thresh::Vector, msst.lyday::Vector, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
+function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
+    mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)
+    fullyears = unique(year.(msst.dates))
+    mask = msst.mask
+    x, y = size(msms.temp)
+    climout, threshout = ntuple(_ -> similar(msms.temp, x, y, 366), 2)
+    msms.exceed[mask, :] = mexc
+    for i in eachindex(mstartsxs)
+        evmeta = _eventmetrics(eachcol(msst.temp)[i], eachcol(msst.clima)[i], eachcol(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
+        meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears, msst.anomfn)
+        cats[i] = evmeta[4]
+        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
+        msms.temp[mask[i], :] = evmeta[7]
+        msms.category[mask[i], :] = evmeta[8]
+        climout[mask[i], :] = eachcol(msst.clima)[i]
+        threshout[mask[i], :] = eachcol(msst.thresh)[i]
+        rons[i], rdcs[i], sdt[i], edt[i] = evmeta[2], evmeta[3], evmeta[5], evmeta[6]
+        rws[i] = repeat([mask[i][1]], length(evmeta[2]))
+        cls[i] = repeat([mask[i][2]], length(evmeta[2]))
+        mni[i], cmi[i], mxi[i], drt[i], vri[i] = evmets
+        trmets = trends(anmets)
+
+        for m in keys(msms.annuals)
+            msms.annuals[m][mask[i], :] = anmets[m]
+            msms.means[m][mask[i]] = meanmets[m]
+            msms.trends[m][mask[i]] = trmets.trends[m]
+            msms.pvalues[m][mask[i]] = trmets.pvalues[m]
+            msms.pmetrics[m][mask[i]] = trmets.pmetrics[m]
+        end
+
+    end
+
+    edf = (MeanInt=reduce(vcat, mni), CumInt=reduce(vcat, cmi), MaxInt=reduce(vcat, mxi), Duration=reduce(vcat, drt), Category=reduce(vcat, cats), ROnset=reduce(vcat, rons), RDecline=reduce(vcat, rdcs), VarInt=reduce(vcat, vri), StartDate=reduce(vcat, sdt), EndDate=reduce(vcat, edt), Xind=reduce(vcat, rws), Yind=reduce(vcat, cls))
+
+    return msms, edf, climout, threshout
+end
+
 
 # TODO: a more appropriate name for this function.
 - is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?
 
-eventmetrics(msst::MarineHeatwave{Vector, NamedTuple}) = _eventmetrics(msst.temp ...)
+eventmetrics(msst::MarineHeatwave{Vector}) = _eventmetrics(msst.temp ...)
 
-eventmetrics(msst::MarineHeatwave{Matrix, NamedTuple})
-
-option 1. 
-mapslices(x,y,z -> _eventmetrics, msst.temp, msst.clima, msst.thresh)
-
-option 2.
-map(x -> expr, iterable)
+eventmetrics(msst::MarineHeatwave{Matrix})
 
 option 3. for loop
 
 for x in axes(msst.temp, 2)
-_eventmetrics(msst.temp[:, x], ...)
+_eventmetrics((msst.temp[:, x], msst.clima[:, x], msst.thresh[:, x], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
 end
 
 =#
@@ -142,4 +172,25 @@ function trends(annualmetrics)
     return (; zip(trds, tss)...)
 end
 
+"""
+this function is supposed to wrap the three processes internal of obtaining the values of an event.
 
+- Essentially, we'll wrap this up for a vector and a matrix.
+- So the vector version will loop through the starts and ends keeping the sst, clim and threshold constant.
+- Perhaps we can use the lyd to create a vector for the clim and thresh to be as long as the sst.
+- it returns the key metrics that will be incorporated in the output without presenting the final outputs themselves.
+- metrics returned are: vector - anomaly, scalars - category, rate of onset and rate of decline
+"""
+function newmets(sst, clim, thrs, lyd, mst, mse)
+    eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
+    cats = _categorys(eanoms)
+    rons = ronset(eanoms, mst, anomfn, argfn)
+    rdcs = rdecline(eanoms, mse, anomfn, argfn)
+    return eanoms.anom, cats, rons, rdcs
+end
+# for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
+# evanom[m] = eanoms.anom
+# stdate[m] = evdate[mst]
+# endate[m] = evdate[mse]
+# mhwout[mst:mse] = eanoms.anom
+# catout[mst:mse] .= cats[m]
