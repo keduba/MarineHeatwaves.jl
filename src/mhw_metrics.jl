@@ -188,9 +188,22 @@ function newmets(sst, clim, thrs, lyd, mst, mse)
     rdcs = rdecline(eanoms, mse, anomfn, argfn)
     return eanoms.anom, cats, rons, rdcs
 end
+
+function newmetsvector(msstobject::Vector, mstarts, mends)
+
+    mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
+    l = length(mstarts)
+    cats, rons, rdcs = ntuple(_ -> Vector{eltype(msstobject.temp)}(undef, l), 3)
+
+    for (i, (mst, mse)) in enumerate(zip(mstarts, mends))
+        eanoms = newmets(msstobject.temp, msstobject.clim, msstobject.thresh, msstobject.lyd, mst, mse)
+        cats[i], rons[i], rdcs[i] = eanoms.cats, eanoms.rons, eanoms.rdcs
+        mhwout[mst:mse] = eanoms.anom
+        catout[mst:mse] .= eanoms.cats
+    end
+    return mhwout, catout, cats, rons, rdcs
+end
 # for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
 # evanom[m] = eanoms.anom
 # stdate[m] = evdate[mst]
 # endate[m] = evdate[mse]
-# mhwout[mst:mse] = eanoms.anom
-# catout[mst:mse] .= cats[m]
