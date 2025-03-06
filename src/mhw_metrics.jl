@@ -173,7 +173,7 @@ function trends(annualmetrics)
 end
 
 """
-this function is supposed to wrap the three processes internal of obtaining the values of an event.
+this function is supposed to wrap the four processes internal of obtaining the values of an event.
 
 - Essentially, we'll wrap this up for a vector and a matrix.
 - So the vector version will loop through the starts and ends keeping the sst, clim and threshold constant.
@@ -181,6 +181,9 @@ this function is supposed to wrap the three processes internal of obtaining the 
 - it returns the key metrics that will be incorporated in the output without presenting the final outputs themselves.
 - metrics returned are: vector - anomaly, scalars - category, rate of onset and rate of decline
 """
+
+# NOTE: A matrix version of the inner functions is not feasible because each pixel represented by a column vector has different starts and ends.
+
 function newmets(sst, clim, thrs, lyd, mst, mse)
     eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
     cats = _categorys(eanoms)
@@ -192,7 +195,7 @@ end
 function newmetsvector(msstobject::Vector, mstarts, mends)
 
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
-    l = length(mstarts)
+    l = size(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(msstobject.temp)}(undef, l), 3)
 
     for (i, (mst, mse)) in enumerate(zip(mstarts, mends))
@@ -203,7 +206,26 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
     end
     return mhwout, catout, cats, rons, rdcs
 end
+# bear in mind that in the matrix version, the starts and ends are vectors of vectors, meaning that we are going into it at two levels before performing the operation.
+# can we use the vector version, probably not as it targets the object itself not the array under.
+function newmetsmatrix(msstobject::Matrix, mstarts, mends)
+
+    mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
+    # l = size(mstarts)
+    cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in length.(mstarts)], 3)
+    # not yet completed
+    for j in axes(msstobject.temp, 2)
+        for (i, (mst, mse)) in enumerate(zip(mstarts[j], mends[j]))
+            eanoms = newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse)
+            cats[j][i], rons[j][i], rdcs[j][i] = eanoms.cats, eanoms.rons, eanoms.rdcs
+            mhwout[mst:mse, j] = eanoms.anom
+            catout[mst:mse, j] .= eanoms.cats
+        end
+    end
+    return mhwout, catout, cats, rons, rdcs
+end
+
 # for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
 # evanom[m] = eanoms.anom
 # stdate[m] = evdate[mst]
-# endate[m] = evdate[mse]
+# endate[m] = evdate[mse] endate[m] = evdate[mse]
