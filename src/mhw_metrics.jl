@@ -123,7 +123,7 @@ function meanmetrics(evanom, rons, rdec, fullyears, anomfn)
     return meanmets, evmets
 end
 
-function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears)
+function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears, anomfn)
     lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evyears = collect(Iterators.flatten(map((x, y) -> x:y, stdate, endate))) .|> year
@@ -184,7 +184,7 @@ this function is supposed to wrap the four processes internal of obtaining the v
 
 # NOTE: A matrix version of the inner functions is not feasible because each pixel represented by a column vector has different starts and ends.
 
-function newmets(sst, clim, thrs, lyd, mst, mse)
+function newmets(sst, clim, thrs, lyd, mst, mse, anomfn, argfn)
     eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
     cats = _categorys(eanoms)
     rons = ronset(eanoms, mst, anomfn, argfn)
@@ -192,27 +192,37 @@ function newmets(sst, clim, thrs, lyd, mst, mse)
     return eanoms.anom, cats, rons, rdcs
 end
 
+"""
+We return the mhw anomalies and categories in the `mhwout` and `catout` in the same format as the initial sst data. So it has the same dimensions with non-mhw events as `0` and mhw events having `non-zero` values.
+"""
 function newmetsvector(msstobject::Vector, mstarts, mends)
 
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
-    l = size(mstarts)
-    cats, rons, rdcs = ntuple(_ -> Vector{eltype(msstobject.temp)}(undef, l), 3)
+    ll = length(mstarts)
+    evanoms = Vector{Vector{eltype(msstobject.temp)}}(undef, ll)
+    cats, rons, rdcs = ntuple(_ -> Vector{eltype(msstobject.temp)}(undef, ll), 3)
 
     for (i, (mst, mse)) in enumerate(zip(mstarts, mends))
-        eanoms = newmets(msstobject.temp, msstobject.clim, msstobject.thresh, msstobject.lyd, mst, mse)
-        cats[i], rons[i], rdcs[i] = eanoms.cats, eanoms.rons, eanoms.rdcs
+        eanoms = newmets(msstobject.temp, msstobject.clim, msstobject.thresh, msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
+       cats[i], rons[i], rdcs[i] = eanoms.cats, eanoms.rons, eanoms.rdcs
+        evanoms[i] = eanoms.anom
         mhwout[mst:mse] = eanoms.anom
         catout[mst:mse] .= eanoms.cats
     end
-    return mhwout, catout, cats, rons, rdcs
+    return mhwout, catout, evanoms, cats, rons, rdcs
+    # TODO: are we not returning the `eanoms` for further work in the metrics?
 end
+
 # bear in mind that in the matrix version, the starts and ends are vectors of vectors, meaning that we are going into it at two levels before performing the operation.
 # can we use the vector version, probably not as it targets the object itself not the array under.
+
 function newmetsmatrix(msstobject::Matrix, mstarts, mends)
 
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
-    # l = size(mstarts)
-    cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in length.(mstarts)], 3)
+    ll = length.(mstarts)
+    cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in ll], 3) 
+     # evanoms_real = [ [Vector{eltype(msstobject.temp)}(undef, l) for l in mstarts[x]] for x in eachindex(mstarts)]
+    # evanoms = Vector{Vector{eltype(sst)}}(undef, ll)
     # not yet completed
     for j in axes(msstobject.temp, 2)
         for (i, (mst, mse)) in enumerate(zip(mstarts[j], mends[j]))
@@ -226,6 +236,16 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
 end
 
 # for (m, (mst, mse)) in enumerate(zip(mstarts, mends))
-# evanom[m] = eanoms.anom
 # stdate[m] = evdate[mst]
-# endate[m] = evdate[mse] endate[m] = evdate[mse]
+# endate[m] = evdate[mse] 
+# evdate = msstobject.dates
+
+function getdates(msstobject, mst, mse)
+    # stdate, endate = ntuple(_ -> Vector{Date}(undef, l), 2)
+return msstobject.date[mst], msstobject.date[mse]
+
+end
+#= usage:
+1. map((x, y) -> getdates(msstobject, x, y), mstarts, mends)
+2. getdates.(msstobject, mstarts, mends)
+=#
