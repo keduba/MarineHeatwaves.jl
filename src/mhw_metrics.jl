@@ -199,18 +199,18 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
 
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
     ll = length(mstarts)
-    evanoms = Vector{Vector{eltype(msstobject.temp)}}(undef, ll)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(msstobject.temp)}(undef, ll), 3)
+    # evanoms = [Vector{eltype(msstobject.temp)}(undef, mstarts[l]) for l in eachindex(mstarts)] # TODO: change mstarts to mends - starts .+ 1
 
     for (i, (mst, mse)) in enumerate(zip(mstarts, mends))
         eanoms = newmets(msstobject.temp, msstobject.clim, msstobject.thresh, msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
        cats[i], rons[i], rdcs[i] = eanoms.cats, eanoms.rons, eanoms.rdcs
-        evanoms[i] = eanoms.anom
+        # evanoms[i] = eanoms.anom
         mhwout[mst:mse] = eanoms.anom
         catout[mst:mse] .= eanoms.cats
     end
     return mhwout, catout, evanoms, cats, rons, rdcs
-    # TODO: are we not returning the `eanoms` for further work in the metrics?
+    # NOTE: are we not returning the `eanoms` for further work in the metrics?
 end
 
 # bear in mind that in the matrix version, the starts and ends are vectors of vectors, meaning that we are going into it at two levels before performing the operation.
@@ -222,6 +222,8 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
     ll = length.(mstarts)
     cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in ll], 3) 
      # evanoms_real = [ [Vector{eltype(msstobject.temp)}(undef, l) for l in mstarts[x]] for x in eachindex(mstarts)]
+    # @assert length.(evanoms_real) == ll
+    # @assert length.(evanoms_real[1]) == mstarts[1]
     # evanoms = Vector{Vector{eltype(sst)}}(undef, ll)
     # not yet completed
     for j in axes(msstobject.temp, 2)
