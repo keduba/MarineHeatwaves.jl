@@ -211,6 +211,7 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
     end
     return mhwout, catout, evanoms, cats, rons, rdcs
     # NOTE: are we not returning the `eanoms` for further work in the metrics?
+    # Answer: we are in the evanoms variable.
 end
 
 # bear in mind that in the matrix version, the starts and ends are vectors of vectors, meaning that we are going into it at two levels before performing the operation.
@@ -222,6 +223,7 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
     ll = length.(mstarts)
     cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in ll], 3)
     mdurations = mends - mstarts .+ 1
+    # here mdurations is a vector of vectors
     evanoms = [[Vector{eltype(msstobject.temp)}(undef, l) for l in mdurations[x]] for x in eachindex(mdurations)]
     # @assert length.(evanoms) == ll
     # @assert length.(evanoms[1]) == mstarts[1]
@@ -245,13 +247,15 @@ end
 
 evyears = vcat(map((x, y) -> x:y, stdate, endate)...) .|> year
 
-function meanmetrics(evanom, rons, rdec, msstobject)# fullyears, anomfn)
-    fullyears = unique(year.(msstobject.dates))
-    lfy = length(fullyears)
+NOTE: for the meanmetrics we can pass the yearobject and the anomfn. so no need to pass the msstobject.
+
+function meanmetrics(evanom, rons, rdec, yearobject, anomfn)
+    # fullyears = unique(year.(msstobject.dates))
+    lfy = length(yearobject.fullyears)
     # Per Event Metrics
     meanint = mean.(evanom)
     cumint = sum.(evanom)
-    maxint = msstobject.anomfn.(evanom)
+    maxint = anomfn.(evanom)
     duration = length.(evanom)
     varint = std.(evanom)
     evmets = (; meanint, cumint, maxint, duration, varint)
@@ -259,7 +263,7 @@ function meanmetrics(evanom, rons, rdec, msstobject)# fullyears, anomfn)
     # Overall Mean Metrics
     meanint = mean(Iterators.flatten(evanom))
     cumint = mean(cumint)
-    maxint = msstobject.anomfn(Iterators.flatten(evanom))
+    maxint = anomfn(Iterators.flatten(evanom))
     ronset = mean(rons)
     rdecline = mean(rdec)
     frequency = length(duration) / lfy
@@ -272,6 +276,31 @@ function meanmetrics(evanom, rons, rdec, msstobject)# fullyears, anomfn)
 end
 
 
+function annualmetrics(evanom, ronset, rdecline, yearobject, anomfn)
+    lfy = length(yearobject.fullyears)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
+    # evyears = collect(Iterators.flatten(map((x, y) -> x:y, stdate, endate))) .|> year
+    # styr, enyr = year.(stdate), year.(endate)
+    evanomf = collect(Iterators.flatten(evanom))
+    annuals = ntuple(_ -> zeros(lfy), length(metrics))
+    for (ey, yr) in enumerate(yearobject.fullyears)
+        yearixs = findall(isequal(yr), yearobject.evyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.styr, yearobject.enyr)) if a == yr || b == yr]
+        if isempty(yearixs)
+            continue
+        end
+        annuals[1][ey] = mean(evanomf[yearixs])      # meanint
+        annuals[2][ey] = mean(sum.(evanom[yrix]))    # cumint
+        annuals[3][ey] = mean(ronset[yrix])
+        annuals[4][ey] = mean(rdecline[yrix])
+        annuals[5][ey] = mean(length.(evanom[yrix])) # duration
+        annuals[6][ey] = anomfn(evanomf[yearixs])   # maxint
+        annuals[7][ey] = length(evanomf[yearixs])    # days
+        annuals[8][ey] = length(yrix)                # frequency
+    end
+    return NamedTuple{metrics}(annuals)
+end
+
 
 NOTE: In the function we are only using the full years, event years and start and end years so essentially that's what we should return ⌣ No need for the start/end dates themselves.
 What we actually need is a function that takes the object, the start and end indices and returns the following:
@@ -282,32 +311,30 @@ What we actually need is a function that takes the object, the start and end ind
 
 # can broadcast either outside or inside at year()
 
-function getyears(msstobject, mst, mse)
-
-# this would work for a scalar or vector of scalars
-msyear = year.(msstobject.dates[mst])
-meyear = year.(msstobject.dates[mse])
-
-fullyears = unique(year.(msstobject.dates)) # could be ignored though
-
-# this can only work if mst/mse are scalars
-eventyears = year.(msstobject.dates[mst] : msstobject.dates[mse])
-
-# base function below
- gevyear(dateobject, mst, mse) = year.(dateobject[mst:mse])
-
-# generalises to scalars and vectors
- eventyears = map((x,y) -> gevyear(dateobj, x, y), mst, mse)
-
-# flattened using vcat and splat
-eventyears = vcat(map((x,y) -> gevyear(dateobj, x, y), mst, mse)...)
-#
-    return msyear,meyear, eventyears, fullyears
-end
-
 this would then return the start/end year as either scalar or vector,
 the eventyear will always be a vector regardless of input, fullyears is always a vector. Can return as a named tuple so we sub what we want by name.
 
-1. map(x  -> getdates(msstobject, x), mstarts) # this works for v of vs
-2. getdates(msstobject, x) # for normal v
+- we could call getyears inside the annual metrics but we also need it for mean metrics so it makes more sense to compute it before the two metrics functions.
+- good place to call it would be at the vector level since what we're passing to mean and annual metrics are vectors.
+
 =#
+function getyears(msstobject, mst, mse)
+
+    # this would work for a scalar or vector of scalars
+    msyear = year.(msstobject.dates[mst])
+    meyear = year.(msstobject.dates[mse])
+    fullyears = unique(year.(msstobject.dates)) # could be ignored though
+
+    # base function below
+    gevyear(dateobject, mst, mse) = year.(dateobject[mst:mse])
+
+    # generalises to scalars and vectors
+    # eventyears = map((x, y) -> gevyear(msstobject.dates, x, y), mst, mse)
+
+    # flattened using vcat and splat
+    eventyears = vcat(map((x, y) -> gevyear(msstobject.dates, x, y), mst, mse)...)
+
+    return (; msyear, meyear, eventyears, fullyears)
+end
+
+
