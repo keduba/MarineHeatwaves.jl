@@ -56,7 +56,7 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
         evmeta = _eventmetrics(eachcol(msst.temp)[i], eachcol(msst.clima)[i], eachcol(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
         meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears, msst.anomfn)
         cats[i] = evmeta[4]
-        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
+        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears, msst.anomfn)
         msms.temp[mask[i], :] = evmeta[7]
         msms.category[mask[i], :] = evmeta[8]
         climout[mask[i], :] = eachcol(msst.clima)[i]
@@ -103,7 +103,7 @@ function edetect(sst::Vector, sstdate, mdate, cdate; threshold=0.9)
     evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(msst, msxs, mexs)
     fullyears = unique(year.(mdate))
     meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears, msst.anomfn)
-    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
+    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears, msst.anomfn)
     trmets = trends(anmets)
     msms.exceed .= mexc
     msms.temp .= mhwout
@@ -142,7 +142,7 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitVector, mstart
     evanom, rons, rdcs, cats, stdate, endate, mhwout, catout = eventmetrics(msst, mstartsxs, mendsxs)
     fullyears = unique(year.(msst.dates))
     meanmets, evmets = meanmetrics(evanom, rons, rdcs, fullyears, msst.anomfn)
-    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears)
+    anmets = annualmetrics(evanom, rons, rdcs, stdate, endate, fullyears, msst.anomfn)
     trmets = trends(anmets)
     msms.exceed .= mexc
     msms.temp .= mhwout

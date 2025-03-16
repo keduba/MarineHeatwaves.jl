@@ -84,16 +84,6 @@ end
 # TODO: a more appropriate name for this function.
 - is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?
 
-eventmetrics(msst::MarineHeatwave{Vector}) = _eventmetrics(msst.temp ...)
-
-eventmetrics(msst::MarineHeatwave{Matrix})
-
-option 3. for loop
-
-for x in axes(msst.temp, 2)
-_eventmetrics((msst.temp[:, x], msst.clima[:, x], msst.thresh[:, x], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
-end
-
 =#
 
 function meanmetrics(evanom, rons, rdec, fullyears, anomfn)
