@@ -15,6 +15,7 @@ include("mhw_clims.jl")
 include("mhw_events.jl")
 include("mhw_labels.jl")
 include("mhw_metrics.jl")
+include("linreg.jl")
 
 export leapyearday
 export edetect

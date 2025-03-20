@@ -136,6 +136,12 @@ function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears, anom
     return NamedTuple{metrics}(annuals)
 end
 
+"""
+helper function to compute the trend. It takes in a specific annual metric and calculates the linear regression on it.
+
+- metric : a vector that potentially has NaN values, its length should be the number of years in the annual metrics.
+- 
+"""
 function __trendv(metric)
     trend, pval, pmet = ntuple(_ -> ones(1), 3)
     m = size(metric, 1)
@@ -274,8 +280,8 @@ function annualmetrics(evanom, ronset, rdecline, yearobject, anomfn)
     evanomf = collect(Iterators.flatten(evanom))
     annuals = ntuple(_ -> zeros(lfy), length(metrics))
     for (ey, yr) in enumerate(yearobject.fullyears)
-        yearixs = findall(isequal(yr), yearobject.evyears)
-        yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.styr, yearobject.enyr)) if a == yr || b == yr]
+        yearixs = findall(isequal(yr), yearobject.eventyears)
+yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
         if isempty(yearixs)
             continue
         end
@@ -311,8 +317,8 @@ the eventyear will always be a vector regardless of input, fullyears is always a
 function getyears(msstobject, mst, mse)
 
     # this would work for a scalar or vector of scalars
-    msyear = year.(msstobject.dates[mst])
-    meyear = year.(msstobject.dates[mse])
+    startyear = year.(msstobject.dates[mst])
+    endyear = year.(msstobject.dates[mse])
     fullyears = unique(year.(msstobject.dates)) # could be ignored though
 
     # base function below
@@ -324,7 +330,19 @@ function getyears(msstobject, mst, mse)
     # flattened using vcat and splat
     eventyears = vcat(map((x, y) -> gevyear(msstobject.dates, x, y), mst, mse)...)
 
-    return (; msyear, meyear, eventyears, fullyears)
+    return (; startyear, endyear, eventyears, fullyears)
 end
 
 
+function _ntrendv(metric)
+    trend, pval, pmet = ntuple(_ -> ones(1), 3)
+    x = 1:length(metric)
+    # y = replace(metric, NaN => missing)
+    # data = DataFrame(X=X, Y=y)
+    # lr = lm(@formula(Y ~ X), data)
+    # trend[1] = coef(lr)[2]
+    lr = linreg(x, metric)
+    pval[1] = coeftable(lr).cols[4][2]
+    pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
+    return trend[1], pval[1], pmet[1]
+end
