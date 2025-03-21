@@ -335,14 +335,25 @@ end
 
 
 function _ntrendv(metric)
-    trend, pval, pmet = ntuple(_ -> ones(1), 3)
+    # trend, pval, pmet = ntuple(_ -> ones(1), 3)
     x = 1:length(metric)
     # y = replace(metric, NaN => missing)
     # data = DataFrame(X=X, Y=y)
     # lr = lm(@formula(Y ~ X), data)
-    # trend[1] = coef(lr)[2]
     lr = linreg(x, metric)
-    pval[1] = coeftable(lr).cols[4][2]
-    pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
-    return trend[1], pval[1], pmet[1]
+    # trend[1] = coef(lr)[2]
+    # pval[1] = coeftable(lr).cols[4][2]
+    # pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
+    return lr #trend[1], pval[1], pmet[1]
+end
+
+function trends(annualmetrics)
+    trds = (:trends, :pvalues, :pmetrics)
+    m = length(annualmetrics)
+    tss = ntuple(_ -> ones(m), 3)
+    for (m, metric) in enumerate(annualmetrics)
+        tss[1][m], tss[2][m], tss[3][m] = __trendv(metric)
+    end
+    tss = (NamedTuple{keys(annualmetrics)}(x) for x in tss)
+    return (; zip(trds, tss)...)
 end
