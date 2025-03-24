@@ -22,8 +22,8 @@ a = randn(10,11)
 b = randn(10,11)
 
 Y = zeros(10,11,length(x))
-for j = 1:size(Y,2)
-    for i = 1:size(Y,1)
+for j in axes(Y,2)
+    for i in axes(Y,1)
         Y[i,j,:] = a[i,j] .+ b[i,j]*x
     end
 end

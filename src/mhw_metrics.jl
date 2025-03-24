@@ -205,7 +205,7 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
         mhwout[mst:mse] = eanoms.anom
         catout[mst:mse] .= eanoms.cats
     end
-    return mhwout, catout, evanoms, cats, rons, rdcs
+    return mhwout, catout, evanoms, rons, rdcs, cats
     # NOTE: are we not returning the `eanoms` for further work in the metrics?
     # Answer: we are in the evanoms variable.
 end
@@ -234,7 +234,8 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
             catout[mst:mse, j] .= eanoms.cats
         end
     end
-    return mhwout, catout, evanoms, cats, rons, rdcs
+    # the mhwout and catout should be transposed
+    return mhwout', catout', evanoms, rons, rdcs, cats
 end
 
 
@@ -335,25 +336,33 @@ end
 
 
 function _ntrendv(metric)
-    # trend, pval, pmet = ntuple(_ -> ones(1), 3)
     x = 1:length(metric)
-    # y = replace(metric, NaN => missing)
-    # data = DataFrame(X=X, Y=y)
-    # lr = lm(@formula(Y ~ X), data)
     lr = linreg(x, metric)
-    # trend[1] = coef(lr)[2]
-    # pval[1] = coeftable(lr).cols[4][2]
-    # pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
-    return lr #trend[1], pval[1], pmet[1]
+    return lr
 end
 
-function trends(annualmetrics)
+function ntrends(annualmetrics)
     trds = (:trends, :pvalues, :pmetrics)
     m = length(annualmetrics)
     tss = ntuple(_ -> ones(m), 3)
     for (m, metric) in enumerate(annualmetrics)
-        tss[1][m], tss[2][m], tss[3][m] = __trendv(metric)
+        tss[1][m], tss[2][m], tss[3][m] = _ntrendv(metric)
     end
     tss = (NamedTuple{keys(annualmetrics)}(x) for x in tss)
     return (; zip(trds, tss)...)
+end
+
+function meanmetsv(evanom, rons, rdec, yearobject, anomfn)
+    # Default metrics
+    lfy = length(yearobject.fullyears)
+    # Overall Mean Metrics
+    meanint = mean(Iterators.flatten(evanom))
+    cumint = mean(sum.(evanom))
+    maxint = anomfn(Iterators.flatten(evanom))
+    ronset = mean(rons)
+    rdecline = mean(rdec)
+    frequency = length(length.(evanom)) / lfy # length.(evanom) can be made a temp variable since it is used thrice. Same as Iter.flatten(evanom) above?
+    days = sum(length.(evanom)) / lfy
+    duration = mean(length.(evanom))
+    return meanmets = (; meanint, cumint, maxint, ronset, rdecline, duration, days, frequency)
 end
