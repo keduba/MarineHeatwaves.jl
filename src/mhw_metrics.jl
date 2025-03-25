@@ -11,6 +11,7 @@
 
 
 """
+#=
 function _eventmetrics(sst, clim, thrs, lyd, anomfn, argfn, evdate, mstarts, mends)
     l = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)
@@ -41,7 +42,6 @@ eventmetrics(
     msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs
 ) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
 
-#=
 
 function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
     mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)
@@ -84,7 +84,7 @@ end
 # TODO: a more appropriate name for this function.
 - is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?
 
-=#
+
 
 function meanmetrics(evanom, rons, rdec, fullyears, anomfn)
     lfy = length(fullyears)
@@ -134,26 +134,26 @@ function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears, anom
         annuals[8][ey] = length(yrix)                # frequency
     end
     return NamedTuple{metrics}(annuals)
-end
-
+# end
+=#
 """
 helper function to compute the trend. It takes in a specific annual metric and calculates the linear regression on it.
 
 - metric : a vector that potentially has NaN values, its length should be the number of years in the annual metrics.
 - 
 """
-function __trendv(metric)
-    trend, pval, pmet = ntuple(_ -> ones(1), 3)
-    m = size(metric, 1)
-    X = 1:m
-    y = replace(metric, NaN => missing)
-    data = DataFrame(X=X, Y=y)
-    lr = lm(@formula(Y ~ X), data)
-    trend[1] = coef(lr)[2]
-    pval[1] = coeftable(lr).cols[4][2]
-    pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
-    return trend[1], pval[1], pmet[1]
-end
+# function __trendv(metric)
+#     trend, pval, pmet = ntuple(_ -> ones(1), 3)
+#     m = size(metric, 1)
+#     X = 1:m
+#     y = replace(metric, NaN => missing)
+#     data = DataFrame(X=X, Y=y)
+#     lr = lm(@formula(Y ~ X), data)
+#     trend[1] = coef(lr)[2]
+#     pval[1] = coeftable(lr).cols[4][2]
+#     pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
+#     return trend[1], pval[1], pmet[1]
+# end
 
 function trends(annualmetrics)
     trds = (:trends, :pvalues, :pmetrics)
@@ -274,7 +274,7 @@ end
 
 
 
-NOTE: In the function we are only using the full years, event years and start and end years so essentially that's what we should return ⌣ No need for the start/end dates themselves.
+NOTE: In the function we are only using the full years, event years and start and end years so essentially that's what we should return \:smiley: No need for the start/end dates themselves.
 What we actually need is a function that takes the object, the start and end indices and returns the following:
 - event years
 - full years
@@ -288,8 +288,8 @@ the eventyear will always be a vector regardless of input, fullyears is always a
 
 - we could call getyears inside the annual metrics but we also need it for mean metrics so it makes more sense to compute it before the two metrics functions.
 - good place to call it would be at the vector level since what we're passing to mean and annual metrics are vectors.
-
 =#
+# TODO: ensure that getyears works well with the annual and mean metrics
 function getyears(msstobject, mst, mse)
 
     # this would work for a scalar or vector of scalars
@@ -309,26 +309,27 @@ function getyears(msstobject, mst, mse)
     return (; startyear, endyear, eventyears, fullyears)
 end
 
-
 function _ntrendv(metric)
-    x = 1:length(metric)
+    x = 1:size(metric, 1)
     lr = linreg(x, metric)
     return lr
 end
 
-function ntrends(annualmetrics)
-    trds = (:trends, :pvalues, :pmetrics)
-    m = length(annualmetrics)
-    tss = ntuple(_ -> ones(m), 3)
-    for (m, metric) in enumerate(annualmetrics)
-        tss[1][m], tss[2][m], tss[3][m] = _ntrendv(metric)
-    end
-    tss = (NamedTuple{keys(annualmetrics)}(x) for x in tss)
-    return (; zip(trds, tss)...)
+# TODO: modify the linreg function to also compute the pvalue
+
+function ntrendm(metric)
+    # In the first two, `metric` is a vector of vectors
+    # 1. using broadcast
+    lr = _ntrendv.(metric)
+    # 2. using map
+    lr = map(met -> _ntrendv(met), metric)
+
+    # 3. `metric` is an array (lon, lat, time)
+    X = axes(metric, 3)
+    lr = mapslices(met -> linreg(X, met), metric)
 end
 
 function meanmetsv(evanom, rons, rdec, yearobject, anomfn)
-    # Default metrics
     lfy = length(yearobject.fullyears)
     # Overall Mean Metrics
     meanint = mean(Iterators.flatten(evanom))
@@ -355,7 +356,6 @@ end
 # getindex.(meansmets, 1) # == vec(meanint)
 
 function eventmets(evanom, anomfn)
-    
     # Per Event Metrics
     meanint = mean.(evanom)
     cumint = sum.(evanom)
@@ -388,14 +388,16 @@ function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
     return ametrics
 end
 
+# TODO: Should probably be able to pass the metrics as an argument somehow
 function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
     lfy = length(yearobject.fullyears)
     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    ametrics = NamedTuple{metrics}([zeros(lfy) for _ in metrics])
+    ametrics = NamedTuple{metrics}((zeros(lfy) for _ in metrics))
     for (ey, yr) in enumerate(yearobject.fullyears)
         yearixs = findall(isequal(yr), yearobject.eventyears)
         yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
+        
         if isempty(yearixs)
             continue
         end
@@ -430,6 +432,5 @@ end
 
 
 function annualmetricsm(evanom, ronset, rdecline, yearobject, anomfn)
-    
     annmets = map((x, y, z) -> annualmetricsv(x, y, z, yearobject, anomfn), evanom, ronset, rdecline)
 end
