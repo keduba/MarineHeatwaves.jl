@@ -273,31 +273,6 @@ function meanmetrics(evanom, rons, rdec, yearobject, anomfn)
 end
 
 
-function annualmetrics(evanom, ronset, rdecline, yearobject, anomfn)
-    lfy = length(yearobject.fullyears)
-    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
-    # evyears = collect(Iterators.flatten(map((x, y) -> x:y, stdate, endate))) .|> year
-    # styr, enyr = year.(stdate), year.(endate)
-    evanomf = collect(Iterators.flatten(evanom))
-    annuals = ntuple(_ -> zeros(lfy), length(metrics))
-    for (ey, yr) in enumerate(yearobject.fullyears)
-        yearixs = findall(isequal(yr), yearobject.eventyears)
-yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
-        if isempty(yearixs)
-            continue
-        end
-        annuals[1][ey] = mean(evanomf[yearixs])      # meanint
-        annuals[2][ey] = mean(sum.(evanom[yrix]))    # cumint
-        annuals[3][ey] = mean(ronset[yrix])
-        annuals[4][ey] = mean(rdecline[yrix])
-        annuals[5][ey] = mean(length.(evanom[yrix])) # duration
-        annuals[6][ey] = anomfn(evanomf[yearixs])   # maxint
-        annuals[7][ey] = length(evanomf[yearixs])    # days
-        annuals[8][ey] = length(yrix)                # frequency
-    end
-    return NamedTuple{metrics}(annuals)
-end
-
 
 NOTE: In the function we are only using the full years, event years and start and end years so essentially that's what we should return ⌣ No need for the start/end dates themselves.
 What we actually need is a function that takes the object, the start and end indices and returns the following:
@@ -364,5 +339,97 @@ function meanmetsv(evanom, rons, rdec, yearobject, anomfn)
     frequency = length(length.(evanom)) / lfy # length.(evanom) can be made a temp variable since it is used thrice. Same as Iter.flatten(evanom) above?
     days = sum(length.(evanom)) / lfy
     duration = mean(length.(evanom))
-    return meanmets = (; meanint, cumint, maxint, ronset, rdecline, duration, days, frequency)
+    return  (; meanint, cumint, maxint, ronset, rdecline, duration, days, frequency)
+end
+
+function meanmetsm(evanom, rons, rdec, yearobject, anomfn)
+    # Default metrics
+    meansmets = map((x, y, z) -> meanmetsv(x, y, z, yearobject, anomfn), evanom, rons, rdec)
+    @assert length(meansmets) == length(evanom)
+    return meansmets # vector of named tuples. length 
+end
+
+# Example usage
+# meansmatrixout = Matrix(undef, size(sst, 1), size(sst, 2))
+# meansmatrixout[maskci] = meansmets
+# getindex.(meansmets, 1) # == vec(meanint)
+
+function eventmets(evanom, anomfn)
+    
+    # Per Event Metrics
+    meanint = mean.(evanom)
+    cumint = sum.(evanom)
+    maxint = anomfn.(evanom)
+    duration = length.(evanom)
+    varint = std.(evanom)
+    (; meanint, cumint, maxint, duration, varint)
+end
+
+function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
+    lfy = length(yearobject.fullyears)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
+    evanomf = collect(Iterators.flatten(evanom))
+    ametrics = NamedTuple{metrics}([zeros(lfy) for _ in metrics])
+    for (ey, yr) in enumerate(yearobject.fullyears)
+        yearixs = findall(isequal(yr), yearobject.eventyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
+        if isempty(yearixs)
+            continue
+        end
+        ametrics.meanint[ey] = mean(evanomf[yearixs])      # meanint
+        ametrics.cumint[ey] = mean(sum.(evanom[yrix]))    # cumint
+        ametrics.ronset[ey] = mean(ronset[yrix])
+        ametrics.rdecline[ey] = mean(rdecline[yrix])
+        ametrics.duration[ey] = mean(length.(evanom[yrix])) # duration
+        ametrics.maxint[ey] = anomfn(evanomf[yearixs])   # maxint
+        ametrics.days[ey] = length(evanomf[yearixs])    # days
+        ametrics.frequency[ey] = length(yrix)                # frequency
+    end
+    return ametrics
+end
+
+function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
+    lfy = length(yearobject.fullyears)
+    metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
+    evanomf = collect(Iterators.flatten(evanom))
+    ametrics = NamedTuple{metrics}([zeros(lfy) for _ in metrics])
+    for (ey, yr) in enumerate(yearobject.fullyears)
+        yearixs = findall(isequal(yr), yearobject.eventyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
+        if isempty(yearixs)
+            continue
+        end
+
+        if :meanint in metrics
+            ametrics.meanint[ey] = mean(evanomf[yearixs])      # meanint
+        end
+        if :cumint in metrics
+            ametrics.cumint[ey] = mean(sum.(evanom[yrix]))    # cumint
+        end
+        if :onset in metrics
+            ametrics.onset[ey] = mean(ronset[yrix])
+        end
+        if :decline in metrics
+            ametrics.decline[ey] = mean(rdecline[yrix])
+        end
+        if :duration in metrics
+            ametrics.duration[ey] = mean(length.(evanom[yrix])) # duration
+        end
+        if :maxint in metrics # or minint for coldspells
+            ametrics.maxint[ey] = anomfn(evanomf[yearixs])   # maxint
+        end
+        if :days in metrics
+            ametrics.days[ey] = length(evanomf[yearixs])    # days
+        end
+        if :frequency in metrics
+            ametrics.frequency[ey] = length(yrix)                # frequency
+        end
+    end
+    return ametrics
+end
+
+
+function annualmetricsm(evanom, ronset, rdecline, yearobject, anomfn)
+    
+    annmets = map((x, y, z) -> annualmetricsv(x, y, z, yearobject, anomfn), evanom, ronset, rdecline)
 end
