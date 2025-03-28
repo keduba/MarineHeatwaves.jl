@@ -291,7 +291,6 @@ the eventyear will always be a vector regardless of input, fullyears is always a
 =#
 # TODO: ensure that getyears works well with the annual and mean metrics
 function getyears(dateobject, mst::Vector{Int}, mse::Vector{Int})
-
     # this would work for a scalar or vector of scalars
     startyear = year.(dateobject[mst])
     endyear = year.(dateobject[mse])
@@ -310,9 +309,10 @@ function getyears(dateobject, mst::Vector{Int}, mse::Vector{Int})
 end
 
 getyears(dateobject, mst::Vector{Vector{Int}}, mse::Vector{Vector{Int}}) = map((x, y) -> getyears(dateobject, x, y), mst, mse)
+
 #=
 test:
- tdate = Date(2020):Date(2025);
+tdate = Date(2020):Date(2025);
 ym = MarineHeatwaves.getyears(tdate, [[4, 12, 29],[4, 10, 19]] , [[9, 20, 36], [10, 19, 24]])
 getindex.(ym, :startyear) [2020, 2020, 2020]
  [2020, 2020, 2020]
@@ -320,6 +320,7 @@ getindex.(ym, :eventyears)
 ym[1]
 (startyear = [2020, 2020, 2020], endyear = [2020, 2020, 2020], eventyears = [2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020  …  2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020])
 =#
+
 function _ntrendv(metric)
     x = 1:size(metric, 1)
     lr = linreg(x, metric)
@@ -340,8 +341,8 @@ function ntrendm(metric)
     lr = mapslices(met -> linreg(X, met), metric)
 end
 
-function meanmetsv(evanom, rons, rdec, yearobject, anomfn)
-    lfy = length(yearobject.fullyears)
+function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
+    lfy = length(fullyears)
     # Overall Mean Metrics
     meanint = mean(Iterators.flatten(evanom))
     cumint = mean(sum.(evanom))
@@ -354,9 +355,9 @@ function meanmetsv(evanom, rons, rdec, yearobject, anomfn)
     return (; meanint, cumint, maxint, ronset, rdecline, duration, days, frequency)
 end
 
-function meanmetsm(evanom, rons, rdec, yearobject, anomfn)
+function meanmetsm(evanom, rons, rdec, fullyears, anomfn)
     # Default metrics
-    meansmets = map((an, ons, dec, yr) -> meanmetsv(an, ons, dec, yr, anomfn), evanom, rons, rdec, yearobject)
+    meansmets = map((an, ons, dec) -> meanmetsv(an, ons, dec, fullyears, anomfn), evanom, rons, rdec)
     @assert length(meansmets) == length(evanom)
     return meansmets # vector of named tuples. length 
 end
@@ -376,14 +377,14 @@ function eventmets(evanom, anomfn)
     (; meanint, cumint, maxint, duration, varint)
 end
 
-function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
-    lfy = length(yearobject.fullyears)
+function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+    # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    ametrics = NamedTuple{metrics}([zeros(lfy) for _ in metrics])
-    for (ey, yr) in enumerate(yearobject.fullyears)
-        yearixs = findall(isequal(yr), yearobject.eventyears)
-        yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
+    ametrics = NamedTuple{metrics}([zeros(length(fullyears)) for _ in metrics])
+    for (ey, yr) in enumerate(fullyears)
+        yearixs = findall(isequal(yr), eventyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
         if isempty(yearixs)
             continue
         end
@@ -400,14 +401,15 @@ function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
 end
 
 # TODO: Should probably be able to pass the metrics as an argument somehow
-# function annualmetricsv(evanom, ronset, rdecline, yearobject, anomfn)
-#     lfy = length(yearobject.fullyears)
+
+# function annualmetricsv(evanom, ronset, rdecline,  eventyears, startyear, endyear, fullyears, anomfn)
+#     lfy = length(fullyears)
 #     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
 #     evanomf = collect(Iterators.flatten(evanom))
 #     ametrics = NamedTuple{metrics}((zeros(lfy) for _ in metrics))
-#     for (ey, yr) in enumerate(yearobject.fullyears)
-#         yearixs = findall(isequal(yr), yearobject.eventyears)
-#         yrix = [i for (i, (a, b)) in enumerate(zip(yearobject.startyear, yearobject.endyear)) if a == yr || b == yr]
+#     for (ey, yr) in enumerate(fullyears)
+#         yearixs = findall(isequal(yr), eventyears)
+#         yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
 #
 #         if isempty(yearixs)
 #             continue
@@ -442,6 +444,49 @@ end
 # end
 
 
-function annualmetricsm(evanom, ronset, rdecline, yearobject, anomfn)
-    annmets = map((x, y, z) -> annualmetricsv(x, y, z, yearobject, anomfn), evanom, ronset, rdecline)
+function annualmetricsm(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+    # the fixed variables are: fullyear, anomfn
+    annmets = map((an, ons, dec, evys, sy, ey) -> annualmetricsv(an, ons, dec, evys, sy, ey, fullyears, anomfn), evanom, ronset, rdecline, eventyears, startyear, endyear)
+    return annmets
+    # vector of namedtuples. length(annmets) == length(evanom)
+end
+
+#=
+fill(zeros(n), (x, y, z)) 
+this is for preallocating the output array for the annual metrics. n = no of metrics or values in the vector, x,y = lon,lat,and z is no of years in the annual metrics 
+stack(annualmetrics) |> transpose |> eachcol this is to create a vector of each metric for the array of annual metrics so we can hold all in one array and access them using getindex. 
+ not sure yet how it could work for named metrics but we'll find out.
+fill[mask] = stack|trans|eachcol
+getindex.(fill, 1) gives you the first metric. what if it was accessible by name.
+=#
+
+# Option 1. Use a for loop
+# this assumes that the annmets is complete vector of vectors passed into this function.
+
+function lastoutput1(annmets, mask)
+    n = length(metrics)
+    x, y = size(outarray)
+    z = length(fullyears)
+    outannmetsarray = fill(zeros(n), (x, y, z))
+    for (i, j) in pairs(mask)
+        outannmetsarray[j, :] = annmets[i] |> stack |> transpose |> eachcol
+        outmeanmetsarray[j, :] = meanmets[i] |> stack |> transpose |> eachcol
+    end
+    return outannmetsarray, outmeanmetsarray
+end
+
+# Option 2. Use a for loop
+# annmets is computed in the loop and returned in the array
+
+function lastoutput2(evanom, mask)
+
+    n = length(metrics)
+    x, y = size(outarray)
+    z = length(fullyears)
+
+    outannmetsarray = fill(zeros(n), (x, y, z))
+    for (i, j) in pairs(mask)
+        outannmetsarray[j, :] = annmetsfn()[i] |> stack |> transpose |> eachcol
+        outmeanmetsarray[j, :] = meanmets()[i] |> stack |> transpose |> eachcol
+    end
 end
