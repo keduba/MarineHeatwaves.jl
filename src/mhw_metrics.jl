@@ -495,7 +495,7 @@ function annualmetricsv2(evanom, ronset, rdecline, eventyears, startyear, endyea
             if metric == :duration# in metrics
                 ametrics[ey][m] = mean(length.(evanom[yrix])) # duration
             end
-            if metric == :maxint #in metrics # or minint for coldspells
+            if metric in (:maxint, :minint) #in metrics # minint for coldspells
                 ametrics[ey][m] = anomfn(evanomf[yearixs])   # maxint
             end
             if metric == :days #in metrics
