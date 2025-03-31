@@ -332,11 +332,13 @@ function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
     return meanint, cumint, maxint, ronset, rdecline, duration, days, frequency
 end
 
-function meanmetsm(evanom, rons, rdec, fullyears, anomfn)
+function meanmetsm(outmatrix::AbstractMatrix, evanom, rons, rdec, fullyears, anomfn)
     # Default metrics
-    meansmets = map((an, ons, dec) -> meanmetsv(an, ons, dec, fullyears, anomfn), evanom, rons, rdec)
-    @assert length(meansmets) == length(evanom)
-    return meansmets # vector of tuples. length 
+    for (i, mk) in pairs(mask)
+        outmatrix[mk] = meanmetsv(evanom[i], rons[i], rdec[i], fullyears, anomfn)
+    end
+    # @assert length(meansmets) == length(evanom)
+    # return meansmets # vector of tuples. length 
 end
 
 # Example usage
@@ -344,7 +346,7 @@ end
 # meansmatrixout[maskci] = meansmets
 # getindex.(meansmets, 1) # == vec(meanint)
 
-function eventmets(evanom, anomfn)
+function eventmets(evanom::{Vector}, anomfn)
     # Per Event Metrics
     meanint = mean.(evanom)
     cumint = sum.(evanom)
@@ -354,6 +356,15 @@ function eventmets(evanom, anomfn)
     (; meanint, cumint, maxint, duration, varint)
 end
 
+eventmets(evanom::Vector{Vector}, anomfn) = map(ev -> eventmets(ev, anomfn), eventmets)
+# usage:: Matrix
+# getindex.(eventmets, :meanint) etc.
+# getindex.(eventmets, 1)
+#
+"""
+
+This doesn't return tuples. It starts with tuples and returns a vector of vectors with dimension: length(fullyears) * length(metrics)
+"""
 function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
@@ -374,8 +385,8 @@ function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear
         ametrics.days[ey] = length(evanomf[yearixs])    # days
         ametrics.frequency[ey] = length(yrix)                # frequency
     end
-    return ametrics
-    # return stack(ametrics) |> transpose |> eachcol
+    # return ametrics
+    return stack(ametrics) |> transpose |> eachcol
     # this splits the metrics into vectors of metrics for each year
 end
 
@@ -430,13 +441,79 @@ end
 # 3. will be indexed by number
 # 4. each metric has a fixed position
 # 5. [zeros(length(metrics)) for _ in eachindex(fullyears)]
-# 6. 
+# 6. This currently works for a fixed number of metrics.
+# 7. How to implement it for a variable number of metrics passed by the user??
+
+function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+    # lfy = length(fullyears)
+    metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
+    evanomf = collect(Iterators.flatten(evanom))
+    ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
+    for (ey, yr) in enumerate(fullyears)
+        yearixs = findall(isequal(yr), eventyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
+        if isempty(yearixs)
+            continue
+        end
+        ametrics[ey][1] = mean(evanomf[yearixs])      # meanint
+        ametrics[ey][2] = mean(sum.(evanom[yrix]))    # cumint
+        ametrics[ey][3] = mean(ronset[yrix])
+        ametrics[ey][4] = mean(rdecline[yrix])
+        ametrics[ey][5] = mean(length.(evanom[yrix])) # duration
+        ametrics[ey][6] = anomfn(evanomf[yearixs])   # maxint
+        ametrics[ey][7] = length(evanomf[yearixs])    # days
+        ametrics[ey][8] = length(yrix)                # frequency
+    end
+    return ametrics
+end
+
+function annualmetricsv2(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+    # lfy = length(fullyears)
+    metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
+    evanomf = collect(Iterators.flatten(evanom))
+    ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
+    ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
+    for (ey, yr) in enumerate(fullyears)
+        yearixs = findall(isequal(yr), eventyears)
+        yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
+        if isempty(yearixs)
+            continue
+        end
+        for (m, metric) in pairs(metrics)
+            if metric == :meanint #in metrics
+                ametrics[ey][m] = mean(evanomf[yearixs])      # meanint
+            end
+            if metric == :cumint# in metrics
+                ametrics[ey][m] = mean(sum.(evanom[yrix]))    # cumint
+            end
+            if metric == :onset #in metrics
+                ametrics[ey][m] = mean(ronset[yrix])
+            end
+            if metric == :decline #in metrics
+                ametrics[ey][m] = mean(rdecline[yrix])
+            end
+            if metric == :duration# in metrics
+                ametrics[ey][m] = mean(length.(evanom[yrix])) # duration
+            end
+            if metric == :maxint #in metrics # or minint for coldspells
+                ametrics[ey][m] = anomfn(evanomf[yearixs])   # maxint
+            end
+            if metric == :days #in metrics
+                ametrics[ey][m] = length(evanomf[yearixs])    # days
+            end
+            if metric == :frequency #in metrics
+                ametrics[ey][m] = length(yrix)                # frequency
+            end
+        end
+    end
+    return ametrics
+    # return stack(ametrics) |> transpose |> eachcol
+end
 
 function annualmetricsm(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # the fixed variables are: fullyear, anomfn
     annmets = map((an, ons, dec, evys, sy, ey) -> annualmetricsv(an, ons, dec, evys, sy, ey, fullyears, anomfn), evanom, ronset, rdecline, eventyears, startyear, endyear)
     return annmets
-    # vector of namedtuples. length(annmets) == length(evanom)
 end
 
 function trendout(outmatrixes::AbstractMatrix, annualmetricsm::Method, mask)
@@ -450,7 +527,7 @@ function trendout(outmatrixes::AbstractMatrix, annualmetricsm::Method, mask)
     end
 end
 
-function trendout(outvectors::AbstractMatrix, annualmetricsv::Method, mask)
+function trendout(outvectors::AbstractVector, annualmetricsv::Method, mask)
     X = eachindex(first(annualmetricsv))
     for n in eachindex(first(annualmetricsv))
         outvectors[1][mask][n],
