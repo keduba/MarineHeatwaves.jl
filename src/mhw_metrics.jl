@@ -142,7 +142,7 @@ helper function to compute the trend. It takes in a specific annual metric and c
 - metric : a vector that potentially has NaN values, its length should be the number of years in the annual metrics.
 - 
 """
-# function __trendv(metric)
+#= function __trendv(metric)
 #     trend, pval, pmet = ntuple(_ -> ones(1), 3)
 #     m = size(metric, 1)
 #     X = 1:m
@@ -165,6 +165,7 @@ function trends(annualmetrics)
     tss = (NamedTuple{keys(annualmetrics)}(x) for x in tss)
     return (; zip(trds, tss)...)
 end
+=#
 
 """
 this function is supposed to wrap the four processes internal of obtaining the values of an event.
@@ -195,7 +196,6 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
     ll = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(msstobject.temp)}(undef, ll), 3)
     mdurations = mends - mstarts .+ 1
-    # evanoms = [Vector{eltype(msstobject.temp)}(undef, mstarts[l]) for l in eachindex(mstarts)] 
     evanoms = [Vector{eltype(msstobject.temp)}(undef, l) for l in mdurations]
 
     for (i, (mst, mse)) in enumerate(zip(mstarts, mends))
@@ -206,15 +206,12 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
         catout[mst:mse] .= eanoms.cats
     end
     return mhwout, catout, evanoms, rons, rdcs, cats
-    # NOTE: are we not returning the `eanoms` for further work in the metrics?
-    # Answer: we are in the evanoms variable.
 end
 
 # bear in mind that in the matrix version, the starts and ends are vectors of vectors, meaning that we are going into it at two levels before performing the operation.
-# can we use the vector version, probably not as it targets the object itself not the array under.
 
 function newmetsmatrix(msstobject::Matrix, mstarts, mends)
-
+    # TODO: the mhwout and catout should be the final one so we don't need to write a different function to return it in its output state
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
     ll = length.(mstarts)
     cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in ll], 3)
@@ -223,8 +220,6 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
     evanoms = [[Vector{eltype(msstobject.temp)}(undef, l) for l in mdurations[x]] for x in eachindex(mdurations)]
     # @assert length.(evanoms) == ll
     # @assert length.(evanoms[1]) == mstarts[1]
-    # evanoms = Vector{Vector{eltype(sst)}}(undef, ll)
-    # not yet completed
     for j in axes(msstobject.temp, 2)
         for (i, (mst, mse)) in enumerate(zip(mstarts[j], mends[j]))
             eanoms = newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
@@ -238,39 +233,41 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
     return mhwout', catout', evanoms, rons, rdcs, cats
 end
 
+# complementary function that returns the output array from the previous method
+function mhwcatout(outputarray, first(newmetsmatrix, 2))
+    # run a for loop
+    outputarray
+end
+
+# Version that takes in the output array
+function newmetsmatrix(outputarray::AbstractArray, msstobject::Matrix, mstarts, mends)
+    # TODO: the mhwout and catout should be the final one so we don't need to write a different function to return it in its output state
+
+    # mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
+    ll = length.(mstarts)
+    cats, rons, rdcs = ntuple(_ -> [Vector{eltype(msstobject.temp)}(undef, l) for l in ll], 3)
+    mdurations = mends - mstarts .+ 1
+    # here mdurations is a vector of vectors
+    evanoms = [[Vector{eltype(msstobject.temp)}(undef, l) for l in mdurations[x]] for x in eachindex(mdurations)]
+    # @assert length.(evanoms) == ll
+    # @assert length.(evanoms[1]) == mstarts[1]
+    for j in axes(msstobject.temp, 2)
+        for (i, (mst, mse)) in enumerate(zip(mstarts[j], mends[j]))
+            eanoms = newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
+            cats[j][i], rons[j][i], rdcs[j][i] = eanoms.cats, eanoms.rons, eanoms.rdcs
+            evanoms[j][i] = eanoms.anom
+            # mhwout[mst:mse, j] = eanoms.anom
+            # catout[mst:mse, j] .= eanoms.cats
+            outputarray[1][msstobject.mask[j], mst:mse] = eanoms.anom
+            outputarray[2][msstobject.mask[j], mst:mse] .= eanoms.cats
+        end
+    end
+    return outputarray, evanoms, rons, rdcs, cats
+end
+# what is the fill value for the contents of the outputarrays where there is no mhw? NaN or 0?
 
 
 #= For the mean and annual metrics
-
-evyears = vcat(map((x, y) -> x:y, stdate, endate)...) .|> year
-
-NOTE: for the meanmetrics we can pass the yearobject and the anomfn. so no need to pass the msstobject.
-
-function meanmetrics(evanom, rons, rdec, yearobject, anomfn)
-    # fullyears = unique(year.(msstobject.dates))
-    lfy = length(yearobject.fullyears)
-    # Per Event Metrics
-    meanint = mean.(evanom)
-    cumint = sum.(evanom)
-    maxint = anomfn.(evanom)
-    duration = length.(evanom)
-    varint = std.(evanom)
-    evmets = (; meanint, cumint, maxint, duration, varint)
-
-    # Overall Mean Metrics
-    meanint = mean(Iterators.flatten(evanom))
-    cumint = mean(cumint)
-    maxint = anomfn(Iterators.flatten(evanom))
-    ronset = mean(rons)
-    rdecline = mean(rdec)
-    frequency = length(duration) / lfy
-    days = sum(duration) / lfy
-    duration = mean(length.(evanom))
-
-    meanmets = (; meanint, cumint, maxint, ronset, rdecline, duration, days, frequency)
-
-    return meanmets, evmets
-end
 
 
 
@@ -281,7 +278,6 @@ What we actually need is a function that takes the object, the start and end ind
 - start years
 - end years
 
-# can broadcast either outside or inside at year()
 
 this would then return the start/end year as either scalar or vector,
 the eventyear will always be a vector regardless of input, fullyears is always a vector. Can return as a named tuple so we sub what we want by name.
@@ -289,29 +285,26 @@ the eventyear will always be a vector regardless of input, fullyears is always a
 - we could call getyears inside the annual metrics but we also need it for mean metrics so it makes more sense to compute it before the two metrics functions.
 - good place to call it would be at the vector level since what we're passing to mean and annual metrics are vectors.
 =#
-# TODO: ensure that getyears works well with the annual and mean metrics
+# TODO: ensure that getyears works well with the annual and mean metrics: DONE 
+
 function getyears(dateobject, mst::Vector{Int}, mse::Vector{Int})
-    # this would work for a scalar or vector of scalars
+    # this would work for a scalar or vector of scalars 
     startyear = year.(dateobject[mst])
     endyear = year.(dateobject[mse])
-    # fullyears = unique(year.(dateobject)) # could be ignored though
 
     # base function below
     gevyear(dateobject, mst, mse) = year.(dateobject[mst:mse])
 
-    # generalises to scalars and vectors
-    # eventyears = map((x, y) -> gevyear(msstobject.dates, x, y), mst, mse)
-
     # flattened using vcat and splat
     eventyears = vcat(map((x, y) -> gevyear(dateobject, x, y), mst, mse)...)
 
-    return (; startyear, endyear, eventyears)#, fullyears)
+    return (; startyear, endyear, eventyears)
 end
 
 getyears(dateobject, mst::Vector{Vector{Int}}, mse::Vector{Vector{Int}}) = map((x, y) -> getyears(dateobject, x, y), mst, mse)
 
 #=
-test:
+test getyears:
 tdate = Date(2020):Date(2025);
 ym = MarineHeatwaves.getyears(tdate, [[4, 12, 29],[4, 10, 19]] , [[9, 20, 36], [10, 19, 24]])
 getindex.(ym, :startyear) [2020, 2020, 2020]
@@ -322,26 +315,8 @@ ym[1]
 =#
 
 
-# function _ntrendv(annmets::Tuple{Vector})
-#     x = 1:size(metric, 1)
-#     lr = linreg(x, metric)
-#     return lr
-# end
-
 # TODO: modify the linreg function to also compute the pvalue
 # What does linreg return : a, b, r2, sigma_a, sigma_b, sigma_e
-function ntrendm(annmets::Vector{Tuple{Vector}})
-    nothing
-    # annmets is a vector of tuples where each tuple represents a metric e.g mean, cumint, days etc. 
-    P = size(annmets, 1) # no of tuples (pixels)
-    M = eachindex(first(annmets)) # no of metrics
-    X = eachindex(first(annmets)[1])
-    # NOTE: double check this
-    for m in M
-        # will use the indices.
-        lr = linreg(X, getindex.(annmets, m))
-    end
-end
 
 function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
     lfy = length(fullyears)
@@ -354,14 +329,14 @@ function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
     frequency = length(length.(evanom)) / lfy # length.(evanom) can be made a temp variable since it is used thrice. Same as Iter.flatten(evanom) above?
     days = sum(length.(evanom)) / lfy
     duration = mean(length.(evanom))
-    return (; meanint, cumint, maxint, ronset, rdecline, duration, days, frequency)
+    return meanint, cumint, maxint, ronset, rdecline, duration, days, frequency
 end
 
 function meanmetsm(evanom, rons, rdec, fullyears, anomfn)
     # Default metrics
     meansmets = map((an, ons, dec) -> meanmetsv(an, ons, dec, fullyears, anomfn), evanom, rons, rdec)
     @assert length(meansmets) == length(evanom)
-    return meansmets # vector of named tuples. length 
+    return meansmets # vector of tuples. length 
 end
 
 # Example usage
@@ -383,7 +358,6 @@ function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    # ametrics = NamedTuple{metrics}([zeros(length(fullyears)) for _ in metrics])
     ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), eventyears)
@@ -411,7 +385,6 @@ end
 #     lfy = length(fullyears)
 #     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
 #     evanomf = collect(Iterators.flatten(evanom))
-#     ametrics = NamedTuple{metrics}(zeros(lfy) for _ in metrics)
 # ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
 #     for (ey, yr) in enumerate(fullyears)
 #         yearixs = findall(isequal(yr), eventyears)
