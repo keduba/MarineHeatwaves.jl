@@ -321,24 +321,26 @@ ym[1]
 (startyear = [2020, 2020, 2020], endyear = [2020, 2020, 2020], eventyears = [2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020  …  2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020, 2020])
 =#
 
-function _ntrendv(metric)
-    x = 1:size(metric, 1)
-    lr = linreg(x, metric)
-    return lr
-end
+
+# function _ntrendv(annmets::Tuple{Vector})
+#     x = 1:size(metric, 1)
+#     lr = linreg(x, metric)
+#     return lr
+# end
 
 # TODO: modify the linreg function to also compute the pvalue
-
-function ntrendm(metric)
-    # In the first two, `metric` is a vector of vectors
-    # 1. using broadcast
-    lr = _ntrendv.(metric)
-    # 2. using map
-    lr = map(met -> _ntrendv(met), metric)
-
-    # 3. `metric` is an array (lon, lat, time)
-    X = axes(metric, 3)
-    lr = mapslices(met -> linreg(X, met), metric)
+# What does linreg return : a, b, r2, sigma_a, sigma_b, sigma_e
+function ntrendm(annmets::Vector{Tuple{Vector}})
+    nothing
+    # annmets is a vector of tuples where each tuple represents a metric e.g mean, cumint, days etc. 
+    P = size(annmets, 1) # no of tuples (pixels)
+    M = eachindex(first(annmets)) # no of metrics
+    X = eachindex(first(annmets)[1])
+    # NOTE: double check this
+    for m in M
+        # will use the indices.
+        lr = linreg(X, getindex.(annmets, m))
+    end
 end
 
 function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
@@ -381,7 +383,8 @@ function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    ametrics = NamedTuple{metrics}([zeros(length(fullyears)) for _ in metrics])
+    # ametrics = NamedTuple{metrics}([zeros(length(fullyears)) for _ in metrics])
+    ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), eventyears)
         yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
@@ -398,6 +401,8 @@ function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear
         ametrics.frequency[ey] = length(yrix)                # frequency
     end
     return ametrics
+    # return stack(ametrics) |> transpose |> eachcol
+    # this splits the metrics into vectors of metrics for each year
 end
 
 # TODO: Should probably be able to pass the metrics as an argument somehow
@@ -406,7 +411,8 @@ end
 #     lfy = length(fullyears)
 #     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
 #     evanomf = collect(Iterators.flatten(evanom))
-#     ametrics = NamedTuple{metrics}((zeros(lfy) for _ in metrics))
+#     ametrics = NamedTuple{metrics}(zeros(lfy) for _ in metrics)
+# ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
 #     for (ey, yr) in enumerate(fullyears)
 #         yearixs = findall(isequal(yr), eventyears)
 #         yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
@@ -441,8 +447,17 @@ end
 #         end
 #     end
 #     return ametrics
+# return stack(ametrics) |> transpose |> eachcol
 # end
 
+# TODO:
+# Implement a version of annualmetricsv that:
+# 1. doesn't use namedtuples
+# 2. is a vector of vectors (length of years * number of metrics)
+# 3. will be indexed by number
+# 4. each metric has a fixed position
+# 5. [zeros(length(metrics)) for _ in eachindex(fullyears)]
+# 6. 
 
 function annualmetricsm(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # the fixed variables are: fullyear, anomfn
@@ -451,42 +466,28 @@ function annualmetricsm(evanom, ronset, rdecline, eventyears, startyear, endyear
     # vector of namedtuples. length(annmets) == length(evanom)
 end
 
-#=
-fill(zeros(n), (x, y, z)) 
-this is for preallocating the output array for the annual metrics. n = no of metrics or values in the vector, x,y = lon,lat,and z is no of years in the annual metrics 
-stack(annualmetrics) |> transpose |> eachcol this is to create a vector of each metric for the array of annual metrics so we can hold all in one array and access them using getindex. 
- not sure yet how it could work for named metrics but we'll find out.
-fill[mask] = stack|trans|eachcol
-getindex.(fill, 1) gives you the first metric. what if it was accessible by name.
-=#
-
-# Option 1. Use a for loop
-# this assumes that the annmets is complete vector of vectors passed into this function.
-
-function lastoutput1(annmets, mask)
-    n = length(metrics)
-    x, y = size(outarray)
-    z = length(fullyears)
-    outannmetsarray = fill(zeros(n), (x, y, z))
-    for (i, j) in pairs(mask)
-        outannmetsarray[j, :] = annmets[i] |> stack |> transpose |> eachcol
-        outmeanmetsarray[j, :] = meanmets[i] |> stack |> transpose |> eachcol
+function trendout(outmatrixes::AbstractMatrix, annualmetricsm::Method, mask)
+    X = eachindex(first(annualmetricsm))
+    for (p, pix) in pairs(annualmetricsm)
+        for n in eachindex(first(pix))
+            outmatrixes[1][mask][p][n],
+            outmatrixes[2][mask][p][n],
+            outmatrixes[3][mask][p][n] = linreg(X, getindex.(pix, n))
+        end
     end
-    return outannmetsarray, outmeanmetsarray
 end
 
-# Option 2. Use a for loop
-# annmets is computed in the loop and returned in the array
+function trendout(outvectors::AbstractMatrix, annualmetricsv::Method, mask)
+    X = eachindex(first(annualmetricsv))
+    for n in eachindex(first(annualmetricsv))
+        outvectors[1][mask][n],
+        outvectors[2][mask][n],
+        outvectors[3][mask][n] = linreg(X, getindex.(annualmetricsv, n))
+    end
+end
 
-function lastoutput2(evanom, mask)
-
-    n = length(metrics)
-    x, y = size(outarray)
-    z = length(fullyears)
-
-    outannmetsarray = fill(zeros(n), (x, y, z))
-    for (i, j) in pairs(mask)
-        outannmetsarray[j, :] = annmetsfn()[i] |> stack |> transpose |> eachcol
-        outmeanmetsarray[j, :] = meanmets()[i] |> stack |> transpose |> eachcol
+function annualmetricsmatrixout(outarray::AbstractArray, annualmetricsm, mask)
+    for (p, pix) in pairs(annualmetricsm)
+        outarray[mask[p], :] = pix
     end
 end
