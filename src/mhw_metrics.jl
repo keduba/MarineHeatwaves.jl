@@ -332,7 +332,7 @@ function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
     return meanint, cumint, maxint, ronset, rdecline, duration, days, frequency
 end
 
-function meanmetsm(outmatrix::AbstractMatrix, evanom, rons, rdec, fullyears, anomfn)
+function meanmetsm(outmatrix::AbstractMatrix, evanom, rons, rdec, fullyears, mask, anomfn)
     # Default metrics
     for (i, mk) in pairs(mask)
         outmatrix[mk] = meanmetsv(evanom[i], rons[i], rdec[i], fullyears, anomfn)
@@ -356,7 +356,7 @@ function eventmets(evanom::Vector, anomfn)
     (; meanint, cumint, maxint, duration, varint)
 end
 
-eventmets(evanom::Vector{Vector}, anomfn) = map(ev -> eventmets(ev, anomfn), eventmets)
+eventmets(evanom::Vector{Vector}, anomfn) = map(ev -> eventmets(ev, anomfn), evanom)
 # usage:: Matrix
 # getindex.(eventmets, :meanint) etc.
 # getindex.(eventmets, 1)
