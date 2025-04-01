@@ -234,10 +234,10 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
 end
 
 # complementary function that returns the output array from the previous method
-function mhwcatout(outputarray, first(newmetsmatrix, 2))
-    # run a for loop
-    outputarray
-end
+# function mhwcatout(outputarray, first(newmetsmatrix, 2))
+# run a for loop
+# outputarray
+# end
 
 # Version that takes in the output array
 function newmetsmatrix(outputarray::AbstractArray, msstobject::Matrix, mstarts, mends)
@@ -346,7 +346,7 @@ end
 # meansmatrixout[maskci] = meansmets
 # getindex.(meansmets, 1) # == vec(meanint)
 
-function eventmets(evanom::{Vector}, anomfn)
+function eventmets(evanom::Vector, anomfn)
     # Per Event Metrics
     meanint = mean.(evanom)
     cumint = sum.(evanom)
@@ -444,7 +444,7 @@ end
 # 6. This currently works for a fixed number of metrics.
 # 7. How to implement it for a variable number of metrics passed by the user??
 
-function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+function annualmetricsv2(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
@@ -467,7 +467,7 @@ function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear
     return ametrics
 end
 
-function annualmetricsv2(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+function annualmetricsv3(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
