@@ -3,6 +3,7 @@ module MarineHeatwaves
 # Write your package code here.
 using Dates
 using Statistics
+using Distributions
 using GLM
 using NaNStatistics
 using Base.Iterators

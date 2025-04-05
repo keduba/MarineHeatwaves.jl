@@ -73,7 +73,7 @@ function _mylabeling(exceedance::BitMatrix)
         mendsxs[s] = endindices(mends, hna)
     end
     mstartxs, mendsxs
-end=#
+end
 
 function __mylabeling(exceedance, exdiff)
     # first function checking that the length of starts and ends of events are similar
@@ -92,6 +92,8 @@ function __mylabeling(exceedance, exdiff)
     end
     return mstarts, menders
 end
+=#
+
 
 # WARN: No need for the following lines. Instead obtain the starts and ends and then check the length. if not equal, throw error. That's not all though. They could be same length and still wrong.
 
@@ -125,7 +127,7 @@ function endlabel(exdiff, exceedance)
 end
 
 
-#
+
 # function _mylabeling(exceedance::BitVector)
 #     exdiff = diff(exceedance)
 #     mstarts, menders = __mylabeling(exceedance, exdiff)
@@ -135,7 +137,7 @@ end
 #     return mstartxs, mendsxs
 # end
 
-function _mylabeling(exceedance::BitVector, min_dur, max_gap)
+function mylabeling(exceedance::Vector, min_dur, max_gap)
     exdiff = diff(exceedance)
     mstarts = startlabel(exdiff, exceedance)
     menders = endlabel(exdiff, exceedance)

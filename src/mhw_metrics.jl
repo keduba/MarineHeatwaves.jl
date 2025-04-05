@@ -1,6 +1,7 @@
 """
 `_eventmetrics` is the base function for calculating the events in each pixel. Since each pixel has potentially many events, we create vectors to hold each output. It returns:
 - category
+using Dates: max_width
 - rate of onset
 - rate of decline
 - event anomaly
@@ -11,7 +12,6 @@
 
 
 """
-#=
 function _eventmetrics(sst, clim, thrs, lyd, anomfn, argfn, evdate, mstarts, mends)
     l = length(mstarts)
     cats, rons, rdcs = ntuple(_ -> Vector{eltype(sst)}(undef, l), 3)
@@ -54,7 +54,7 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
         evmeta = _eventmetrics(eachcol(msst.temp)[i], eachcol(msst.clima)[i], eachcol(msst.thresh)[i], msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs[i], mendsxs[i])
         meanmets, evmets = meanmetrics(evmeta[1], evmeta[2], evmeta[3], fullyears, msst.anomfn)
         cats[i] = evmeta[4]
-        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears)
+        anmets = annualmetrics(evmeta[1], evmeta[2], evmeta[3], evmeta[5], evmeta[6], fullyears, msst.anomfn)
         msms.temp[mask[i], :] = evmeta[7]
         msms.category[mask[i], :] = evmeta[8]
         climout[mask[i], :] = eachcol(msst.clima)[i]
@@ -82,7 +82,7 @@ end
 
 
 # TODO: a more appropriate name for this function.
-- is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?
+# - is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?
 
 
 
@@ -134,26 +134,25 @@ function annualmetrics(evanom, ronset, rdecline, stdate, endate, fullyears, anom
         annuals[8][ey] = length(yrix)                # frequency
     end
     return NamedTuple{metrics}(annuals)
-# end
-=#
+end
 """
 helper function to compute the trend. It takes in a specific annual metric and calculates the linear regression on it.
 
 - metric : a vector that potentially has NaN values, its length should be the number of years in the annual metrics.
 - 
 """
-#= function __trendv(metric)
-#     trend, pval, pmet = ntuple(_ -> ones(1), 3)
-#     m = size(metric, 1)
-#     X = 1:m
-#     y = replace(metric, NaN => missing)
-#     data = DataFrame(X=X, Y=y)
-#     lr = lm(@formula(Y ~ X), data)
-#     trend[1] = coef(lr)[2]
-#     pval[1] = coeftable(lr).cols[4][2]
-#     pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
-#     return trend[1], pval[1], pmet[1]
-# end
+function __trendv(metric)
+    trend, pval, pmet = ntuple(_ -> ones(1), 3)
+    m = size(metric, 1)
+    X = 1:m
+    y = replace(metric, NaN => missing)
+    data = DataFrame(X=X, Y=y)
+    lr = lm(@formula(Y ~ X), data)
+    trend[1] = coef(lr)[2]
+    pval[1] = coeftable(lr).cols[4][2]
+    pmet[1] = Float64(prod(confint(lr)[2, :]) ≥ 0)
+    return trend[1], pval[1], pmet[1]
+end
 
 function trends(annualmetrics)
     trds = (:trends, :pvalues, :pmetrics)
@@ -165,7 +164,6 @@ function trends(annualmetrics)
     tss = (NamedTuple{keys(annualmetrics)}(x) for x in tss)
     return (; zip(trds, tss)...)
 end
-=#
 
 """
 this function is supposed to wrap the four processes internal of obtaining the values of an event.
@@ -179,7 +177,7 @@ this function is supposed to wrap the four processes internal of obtaining the v
 
 # NOTE: A matrix version of the inner functions is not feasible because each pixel represented by a column vector has different starts and ends.
 
-function newmets(sst, clim, thrs, lyd, mst, mse, anomfn, argfn)
+function _newmets(sst, clim, thrs, lyd, mst, mse, anomfn, argfn)
     eanoms = _anoms(sst, clim, thrs, lyd, mst, mse)
     cats = _categorys(eanoms)
     rons = ronset(eanoms, mst, anomfn, argfn)
@@ -190,7 +188,7 @@ end
 """
 We return the mhw anomalies and categories in the `mhwout` and `catout` in the same format as the initial sst data. So it has the same dimensions with non-mhw events as `0` and mhw events having `non-zero` values.
 """
-function newmetsvector(msstobject::Vector, mstarts, mends)
+function newmets(outarray::AbstractArray, msstobject, mstarts::Vector{Int}, mends::Vector{Int})
 
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
     ll = length(mstarts)
@@ -199,18 +197,21 @@ function newmetsvector(msstobject::Vector, mstarts, mends)
     evanoms = [Vector{eltype(msstobject.temp)}(undef, l) for l in mdurations]
 
     for (i, (mst, mse)) in enumerate(zip(mstarts, mends))
-        eanoms = newmets(msstobject.temp, msstobject.clim, msstobject.thresh, msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
+        eanoms = _newmets(msstobject.temp, msstobject.clim, msstobject.thresh, msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
         cats[i], rons[i], rdcs[i] = eanoms.cats, eanoms.rons, eanoms.rdcs
         evanoms[i] = eanoms.anom
-        mhwout[mst:mse] = eanoms.anom
-        catout[mst:mse] .= eanoms.cats
+        outarray[1][mst:mse] = eanoms.anom
+        outarray[2][mst:mse] .= eanoms.cats
+        # mhwout[mst:mse] = eanoms.anom
+        # catout[mst:mse] .= eanoms.cats
     end
-    return mhwout, catout, evanoms, rons, rdcs, cats
+    # return mhwout, catout, evanoms, rons, rdcs, cats
+    return outarray, evanoms, rons, rdcs, cats
 end
 
 # bear in mind that in the matrix version, the starts and ends are vectors of vectors, meaning that we are going into it at two levels before performing the operation.
 
-function newmetsmatrix(msstobject::Matrix, mstarts, mends)
+function newmets(msstobject::Matrix, mstarts, mends)
     # TODO: the mhwout and catout should be the final one so we don't need to write a different function to return it in its output state
     mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
     ll = length.(mstarts)
@@ -222,7 +223,7 @@ function newmetsmatrix(msstobject::Matrix, mstarts, mends)
     # @assert length.(evanoms[1]) == mstarts[1]
     for j in axes(msstobject.temp, 2)
         for (i, (mst, mse)) in enumerate(zip(mstarts[j], mends[j]))
-            eanoms = newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
+            eanoms = _newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
             cats[j][i], rons[j][i], rdcs[j][i] = eanoms.cats, eanoms.rons, eanoms.rdcs
             evanoms[j][i] = eanoms.anom
             mhwout[mst:mse, j] = eanoms.anom
@@ -240,7 +241,7 @@ end
 # end
 
 # Version that takes in the output array
-function newmetsmatrix(outputarray::AbstractArray, msstobject::Matrix, mstarts, mends)
+function newmets(outputarray::AbstractArray, msstobject::Matrix, mstarts, mends)
     # TODO: the mhwout and catout should be the final one so we don't need to write a different function to return it in its output state
 
     # mhwout, catout = (zeros(size(msstobject.temp)) for _ in 1:2)
@@ -253,7 +254,7 @@ function newmetsmatrix(outputarray::AbstractArray, msstobject::Matrix, mstarts, 
     # @assert length.(evanoms[1]) == mstarts[1]
     for j in axes(msstobject.temp, 2)
         for (i, (mst, mse)) in enumerate(zip(mstarts[j], mends[j]))
-            eanoms = newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
+            eanoms = _newmets(msstobject.temp[:, j], msstobject.clim[:, j], msstobject.thresh[:, j], msstobject.lyd, mst, mse, msstobject.anomfn, msstobject.argfn)
             cats[j][i], rons[j][i], rdcs[j][i] = eanoms.cats, eanoms.rons, eanoms.rdcs
             evanoms[j][i] = eanoms.anom
             # mhwout[mst:mse, j] = eanoms.anom
@@ -318,7 +319,7 @@ ym[1]
 # TODO: modify the linreg function to also compute the pvalue
 # What does linreg return : a, b, r2, sigma_a, sigma_b, sigma_e
 
-function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
+function _meanmets(evanom::Vector{AbstractFloat}, rons, rdec, fullyears, anomfn)
     lfy = length(fullyears)
     # Overall Mean Metrics
     meanint = mean(Iterators.flatten(evanom))
@@ -332,19 +333,33 @@ function meanmetsv(evanom, rons, rdec, fullyears, anomfn)
     return meanint, cumint, maxint, ronset, rdecline, duration, days, frequency
 end
 
-function meanmetsm(outmatrix::AbstractMatrix, evanom, rons, rdec, fullyears, mask, anomfn)
+meanmets(evanom::Vector{AbstractFloat}, rons, rdcs, fyears, anomfn) = _meanmets(evanom, rons, rdcs, fyears, anomfn)
+
+function meanmets(evanom::Vector{Vector{AbstractFloat}}, rons, rdec, fullyears, anomfn)
     # Default metrics
-    for (i, mk) in pairs(mask)
-        outmatrix[mk] = meanmetsv(evanom[i], rons[i], rdec[i], fullyears, anomfn)
+    outmatrix = [zeros(8) for _ in eachindex(evanom)]
+    for (i, eva) in pairs(evanom)
+        outmatrix[i] = _meanmets(eva, rons[i], rdec[i], fullyears, anomfn)
     end
     # @assert length(meansmets) == length(evanom)
-    # return meansmets # vector of tuples. length 
+    return outmatrix # vector of tuples. length 
 end
 
 # Example usage
+
 # meansmatrixout = Matrix(undef, size(sst, 1), size(sst, 2))
-# meansmatrixout[maskci] = meansmets
+# meansmatrixout[maskci]= meansmets
 # getindex.(meansmets, 1) # == vec(meanint)
+function meanmetsout(outarray::VecOrMat, meanmets, mask)
+    if isa(meanmets, Vector{Vector{AbstractFloat}})
+        for (i, mk) in pairs(mask)
+            outarray[mk] = meanmets[i]
+        end
+    else
+        outarray[:] = meanmets
+    end
+    return outarray
+end
 
 function eventmets(evanom::Vector, anomfn)
     # Per Event Metrics
@@ -365,7 +380,7 @@ eventmets(evanom::Vector{Vector}, anomfn) = map(ev -> eventmets(ev, anomfn), eva
 
 This doesn't return tuples. It starts with tuples and returns a vector of vectors with dimension: length(fullyears) * length(metrics)
 """
-function annualmetricsv(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+function annualmets(evanom::Vector{AbstractFloat}, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
@@ -444,7 +459,7 @@ end
 # 6. This currently works for a fixed number of metrics.
 # 7. How to implement it for a variable number of metrics passed by the user??
 
-function annualmetricsv2(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+function annualmets2(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
@@ -467,11 +482,11 @@ function annualmetricsv2(evanom, ronset, rdecline, eventyears, startyear, endyea
     return ametrics
 end
 
-function annualmetricsv3(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+function annualmets3(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
+    # ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
     ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), eventyears)
@@ -510,15 +525,15 @@ function annualmetricsv3(evanom, ronset, rdecline, eventyears, startyear, endyea
     # return stack(ametrics) |> transpose |> eachcol
 end
 
-function annualmetricsm(evanom, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
+function annualmets(evanom::Vector{Vector{AbstractFloat}}, ronset, rdecline, eventyears, startyear, endyear, fullyears, anomfn)
     # the fixed variables are: fullyear, anomfn
-    annmets = map((an, ons, dec, evys, sy, ey) -> annualmetricsv(an, ons, dec, evys, sy, ey, fullyears, anomfn), evanom, ronset, rdecline, eventyears, startyear, endyear)
+    annmets = map((an, ons, dec, evys, sy, ey) -> annualmets2(an, ons, dec, evys, sy, ey, fullyears, anomfn), evanom, ronset, rdecline, eventyears, startyear, endyear)
     return annmets
 end
 
-function trendout(outmatrixes::AbstractMatrix, annualmetricsm::Method, mask)
-    X = eachindex(first(annualmetricsm))
-    for (p, pix) in pairs(annualmetricsm)
+function trendout(outmatrixes::AbstractMatrix, annualmetrics; mask=mask)
+    X = eachindex(first(annualmetrics))
+    for (p, pix) in pairs(annualmetrics)
         for n in eachindex(first(pix))
             outmatrixes[1][mask][p][n],
             outmatrixes[2][mask][p][n],
@@ -527,17 +542,97 @@ function trendout(outmatrixes::AbstractMatrix, annualmetricsm::Method, mask)
     end
 end
 
-function trendout(outvectors::AbstractVector, annualmetricsv::Method, mask)
-    X = eachindex(first(annualmetricsv))
-    for n in eachindex(first(annualmetricsv))
-        outvectors[1][mask][n],
-        outvectors[2][mask][n],
-        outvectors[3][mask][n] = linreg(X, getindex.(annualmetricsv, n))
+function trendout(outvectors::AbstractVector, annualmetrics)
+    X = eachindex(first(annualmetrics))
+    for n in eachindex(first(annualmetrics))
+        outvectors[1][n],
+        outvectors[2][n],
+        outvectors[3][n] = linreg(X, getindex.(annualmetrics, n))
     end
 end
 
-function annualmetricsmatrixout(outarray::AbstractArray, annualmetricsm, mask)
-    for (p, pix) in pairs(annualmetricsm)
-        outarray[mask[p], :] = pix
+function annualmetricsout(outarray::AbstractArray, annualmetrics, mask)
+    if isa(annualmetrics, Vector{Vector{Vector{AbstractFloat}}})
+        for (p, pix) in pairs(annualmetrics)
+            outarray[mask[p], :] = pix
+        end
+        return outarray
+    else
+        return outarray[:] = annualmetrics
     end
+end
+# TODO: 
+# INFO:
+# NOTE:
+# WARN:
+# PERF:
+# TEST:
+# FIX:
+# HACK:
+# 
+function newdetect(msst)
+    mstarts, mends = mylabeling(exceed(msst), min_dur, max_gap)
+    outarray, evanoms, rons, rdcs, cats = newmets(outarray, msst, mstarts, mends)
+    yrobj = getyears(msst.dates, mstarts, mends)
+    fyears = unique(year.(msst.dates))
+    meanmet = meanmets(evanoms, rons, rdcs, fyears, msst.anomfn)
+    evmets = eventmets(evanoms, msst.anomfn)
+    annmets = annualmets(evanoms, rons, rdcs, yrobj.eventyears, yrobj.startyear, yrobj.endyear, fyears, msst.anomfn)
+    outmeans = meanmetsout(outmean, meanmet, mask)
+    outtrend = trendout(outtrend, annmets)
+    outannualmets = annualmetricsout(outarray, annmets, mask)
+
+    return evmets, outtrend, outmeans, outannualmets
+end
+
+#=
+FIX:
+if ndims(sst) == 3
+    x, y, z = size(sst)
+else
+    x = size(sst)
+end
+
+outarray = zeros(x, y, length(msst.date)) # matrix -> array
+outarray = zeros(length(msst.date)) # vector 
+- For the vector we have two choices: 
+ 1. return a vector of vectors one vector for each of mean, coeff, pvalue and r_sq containing the means of the metrics (about 8 of them) so Vector{Vector{Vector, 8},4}
+ 2. return a matrix in which the rows correspond to the eight metrics and the columns correspond to the 4 variable outputs.
+- This array called outmeans is potentially going to store not only the means but also coeff, pvalue and rsquared
+outmeansv1a = [zeros(size(metrics)) for _ in 1:4] # vector * count(mean, coeff, pvalue, r_squared) @btime [zeros(5) for _ in 1:4];139.946 ns (10 allocations: 480 bytes)
+outmeansv1b = fill(zeros(size(metrics)), 4) # @btime fill(zeros(5), 4);56.918 ns (4 allocations: 192 bytes)
+outmeansv2 = zeros(size(metrics), 4) # vector * length((mean, coeff, pvalue, r_squared)) in this case each row is a metric and each column is one of mean, coeff, pvalue and r_squared @btime zeros(5, 4); 40.205 ns (2 allocations: 240 bytes)
+
+- Or we create an ntuple?
+outmeans, outcoeff, outpvalue, outrsquared = ntuple(_ -> zeros(size(metrics)), 4) # @btime a, b,c,d = (zeros(5) for _ in 1:4);66.167 ns (4 allocations: 256 bytes), @btime a, b,c,d = ntuple(_ -> zeros(5), 4); 107.929 ns (8 allocations: 384 bytes)
+
+outannuals1= zeros(length(fullyears), size(metrics)) # vector input, matrix output column for each metric 20 years and 8 metrics = 20×8 Matrix # @btime zeros(20, 8); 164.210 ns (2 allocations: 1.38 KiB)
+outannuals2= fill(zeros(size(metrics)),length(fullyears)) # vector input, @btime fill(zeros(8),20); 82.647 ns (4 allocations: 352 bytes)
+- For the array
+outmeans = fill(zeros(size(metrics)), x,y,z);#[zeros(size(metrics)) for _ in 1:x, _ in 1:y] @btime fill(zeros(5), 4,5,3); 141.133 ns (4 allocations: 688 bytes), @btime [zeros(3,) for _ in 1:4, _ in 1:5, _ in 1:3]; 1.586 μs (122 allocations: 5.27 KiB)
+outannuals = [zeros(size(metrics)) for _ in 1:x, _ in 1:y, _ in eachindex(fullyears)]
+=#
+
+function vecarr(sst, mhwdate)
+    N = ndims(sst)
+    N ∈ (1, 3) || throw("Oh heat! The dimension of the `sst` should be 1 or 3, we got $(N) instead!")
+    T = eltype(sst)
+    TN = Array{Union{T,Missing},N}
+    TM = Matrix{Union{T,Missing}}
+    TB = Array{Union{Bool,Missing},N}
+    NT = NamedTuple
+
+    # trds = (:means, :trends, :pvalues, :pmetrics)
+    # metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
+    # lt, lm = length(trds), length(metrics)
+    x, y = ifelse(N == 3, size(sst), (1, 1))
+    z = length(mhwdate)
+    zz = length(unique(year.(mhwdate)))
+    ds = N == 1 ? z : (x, y)
+
+    mhwexd = N == 1 ? TB(missing, ds) : TB(missing, ds..., z)
+    mhwtemp, mhwcat = N == 1 ? ntuple(_ -> TN(missing, ds), 2) : ntuple(_ -> TN(missing, ds..., z), 2)
+    annuals = N == 1 ? NT{metrics}(ntuple(_ -> TN(missing, zz), lm)) : NT{metrics}(ntuple(_ -> TN(missing, ds..., zz), lm))
+    mets = N == 1 ? ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, N), lm)), lt) : ntuple(_ -> NT{metrics}(ntuple(_ -> TM(missing, ds...), lm)), lt)
+    return MarineHW(mhwtemp, mhwcat, mhwexd, annuals, mets...)
 end
