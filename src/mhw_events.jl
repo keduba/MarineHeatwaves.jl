@@ -11,8 +11,8 @@
 - anbx (index): for the rate of onset
 - anfx (index): for the rate of decline
 
-- anbf (value): for the rate of onset
-- anft (value): for the rate of decline
+- onsan (value): for the rate of onset
+- decan (value): for the rate of decline
 """
 
 function _anoms(sst, clim, thsh, lyd, mst, mse)
@@ -20,26 +20,58 @@ function _anoms(sst, clim, thsh, lyd, mst, mse)
     thsd = thsh[lyd[mst:mse]] - clim[lyd[mst:mse]]
     lnxt = lastindex(sst)
     anbx, anfx = max(1, mst - 1), min(lnxt, mse + 1)
-    anbf = sst[anbx] - clim[lyd[anbx]]
-    anft = sst[anfx] - clim[lyd[anfx]]
-    return (; anom, anbf, anft, lnxt, thsd)
+    onsan = sst[anbx] - clim[lyd[anbx]]
+    decan = sst[anfx] - clim[lyd[anfx]]
+    return (; anom, onsan, decan, lnxt, thsd)
+end
+
+
+function _anomsnew(sst, clim, thsh, mst, mse)
+    anom = sst[mst:mse] - clim[mst:mse]
+    thsd = thsh[mst:mse] - clim[mst:mse]
+    onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
+    decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
+    return anom, onsan, decan, thsd
 end
 
 _categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
 
 function ronset(anoms, mst, anomfn, argfn)
-    anom, anbf = anoms.anom, anoms.anbf
+    anom, onsan = anoms.anom, anoms.onsan
     nmx, fan, ngx = anomfn(anom), first(anom), argfn(anom)
-    lnmx, snmx = nmx - mean((fan, anbf)), nmx - fan
+    lnmx, snmx = nmx - mean((fan, onsan)), nmx - fan
     ron = mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
     return ron
 end
 
 function rdecline(anoms, mse, anomfn, argfn)
-    anft, lnx, nmx, lan, ngx, lnt = (anoms.anft, anoms.lnxt, anomfn(anoms.anom), last(anoms.anom), argfn(anoms.anom), length(anoms.anom))
-    lnmx, snmx = (nmx - mean((lan, anft)), nmx - lan)
-    rdc = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
-    return rdc
+    decan, lnx, nmx, lan, ngx, lnt = (anoms.decan, anoms.lnxt, anomfn(anoms.anom), last(anoms.anom), argfn(anoms.anom), length(anoms.anom))
+    lnmx, snmx = (nmx - mean((lan, decan)), nmx - lan)
+    decline = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
+    return decline
+end
+
+function _anomsnew(sst, clim, thsh, mst, mse)
+    anom = sst[mst:mse] - clim[mst:mse]
+    thsd = thsh[mst:mse] - clim[mst:mse]
+    onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
+    decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
+    return anom, onsan, decan, thsd
+end
+
+function ronsetnew(anoms, mst)
+    # anom, onsan = anoms.anom, anoms.onsan
+    nmx, fan, ngx = onsetdeclinemin_max(anoms), first(anoms.anom), argfn(anoms)
+    lnmx, snmx = nmx - mean((fan, anoms.onsan)), nmx - fan
+    onset = mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
+    return onset
+end
+
+function rdeclinenew(anoms, mse, lnx)
+    decan, nmx, lan, ngx, lnt = (anoms.decan, onsetdeclinemin_max(anoms), last(anoms.anom), argfn(anoms), length(anoms.anom))
+    lnmx, snmx = (nmx - mean((lan, decan)), nmx - lan)
+    decline = mse < lnx ? /(lnmx, (lnt - ngx + 0.5)) : ngx == lnx ? /(snmx, 1.0) : /(snmx, (lnt - ngx))
+    return decline
 end
 
 # TODO: Rather than number indices, use the tuple name so we know what variable is going where. That's the reason behind NameTuples in the first place.
