@@ -59,6 +59,10 @@ function _anomsnew(sst, clim, thsh, mst, mse)
     return anom, onsan, decan, thsd
 end
 
+anoms(mhw::MHTemp, mst, mse) = WVH(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
+
+anoms(mhw::MCTemp, mst, mse) = WVC(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
+
 function ronsetnew(anoms, mst)
     # anom, onsan = anoms.anom, anoms.onsan
     nmx, fan, ngx = onsetdeclinemin_max(anoms), first(anoms.anom), argfn(anoms)

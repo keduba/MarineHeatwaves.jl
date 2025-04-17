@@ -185,6 +185,25 @@ function _newmets(sst, clim, thrs, lyd, mst, mse, anomfn, argfn)
     return eanoms.anom, cats, rons, rdcs
 end
 
+function _anomsnew(sst, clim, thsh, mst, mse)
+    anom = sst[mst:mse] - clim[mst:mse]
+    thsd = thsh[mst:mse] - clim[mst:mse]
+    onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
+    decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
+    return anom, onsan, decan, thsd
+end
+
+anoms(mhw::MHTemp, mst, mse) = WVH(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
+
+anoms(mhw::MCTemp, mst, mse) = WVC(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
+
+function _newmetsnew(mhw, mst, mse)
+    eanoms = anoms(mhw, mst, mse)
+    cats = _categorys(eanoms)
+    rons = ronsetnew(eanoms, mst)
+    rdcs = rdeclinenew(eanoms, mse, lnx)
+    return eanoms.anom, cats, rons, rdcs
+end
 """
 We return the mhw anomalies and categories in the `mhwout` and `catout` in the same format as the initial sst data. So it has the same dimensions with non-mhw events as `0` and mhw events having `non-zero` values.
 """
@@ -639,27 +658,3 @@ outannuals1 = fill(zeros(size(metrics)), x,y,z); z == no of fullyears PERF: pref
 
 outannuals = [zeros(size(metrics)) for _ in 1:x, _ in 1:y, _ in eachindex(fullyears)]
 =#
-
-function vecarr(sst, mhwdate)
-    N = ndims(sst)
-    N ∈ (1, 3) || throw("Oh heat! The dimension of the `sst` should be 1 or 3, we got $(N) instead!")
-    T = eltype(sst)
-    TN = Array{Union{T,Missing},N}
-    TM = Matrix{Union{T,Missing}}
-    TB = Array{Union{Bool,Missing},N}
-    NT = NamedTuple
-
-    # trds = (:means, :trends, :pvalues, :pmetrics)
-    # metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
-    # lt, lm = length(trds), length(metrics)
-    x, y = ifelse(N == 3, size(sst), (1, 1))
-    z = length(mhwdate)
-    zz = length(unique(year.(mhwdate)))
-    ds = N == 1 ? z : (x, y)
-
-    mhwexd = N == 1 ? TB(missing, ds) : TB(missing, ds..., z)
-    mhwtemp, mhwcat = N == 1 ? ntuple(_ -> TN(missing, ds), 2) : ntuple(_ -> TN(missing, ds..., z), 2)
-    annuals = N == 1 ? NT{metrics}(ntuple(_ -> TN(missing, zz), lm)) : NT{metrics}(ntuple(_ -> TN(missing, ds..., zz), lm))
-    mets = N == 1 ? ntuple(_ -> NT{metrics}(ntuple(_ -> TN(missing, N), lm)), lt) : ntuple(_ -> NT{metrics}(ntuple(_ -> TM(missing, ds...), lm)), lt)
-    return MarineHW(mhwtemp, mhwcat, mhwexd, annuals, mets...)
-end
