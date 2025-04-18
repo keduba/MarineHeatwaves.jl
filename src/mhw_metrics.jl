@@ -589,6 +589,7 @@ end
 # FIX:
 # HACK:
 # 
+#=
 function newdetect(msst)
     mstarts, mends = mylabeling(exceed(msst), min_dur, max_gap)
     outarray, evanoms, rons, rdcs, cats = newmets(outarray, msst, mstarts, mends)
@@ -604,7 +605,7 @@ function newdetect(msst)
     return evmets, outtrend, outmeans, outannualmets
 end
 
-#=
+
 FIX:
 if ndims(sst) == 3
     x, y, z = size(sst)
@@ -628,19 +629,6 @@ outmeansv1b = fill(zeros(size(metrics)), 4) # @btime fill(zeros(5), 4);56.918 ns
     c. getindex(outmeansv1b, 1) == the coeff for all metrics
 
 
-2. return a matrix in which the rows correspond to the metrics and the columns correspond to the 4 variable outputs.
-
-outmeansv2 = zeros(size(metrics), 4) # vector * length((mean, coeff, pvalue, r_squared)) in this case each row is a metric and each column is one of mean, coeff, pvalue and r_squared @btime zeros(5, 4); 40.205 ns (2 allocations: 240 bytes)
-- accessing: 
-    a. outmeansv2[:, 1] == all metrics in first column (e.g, coeff) so all coeffs.
-    b. outmeansv2[1, :] == all of coeff, means, pval, rsq for first metric
-    b. outmeansv2[1, 1] == first metric of first coeff (for example)
-
-- Or we create an ntuple?
-
-outmeans, outcoeff, outpvalue, outrsquared = ntuple(_ -> zeros(size(metrics)), 4) # @btime a, b,c,d = (zeros(5) for _ in 1:4);66.167 ns (4 allocations: 256 bytes), @btime a, b,c,d = ntuple(_ -> zeros(5), 4); 107.929 ns (8 allocations: 384 bytes)
-
-outannuals1 = zeros(length(fullyears), size(metrics)) # vector input, matrix output column for each metric 20 years and 8 metrics = 20×8 Matrix # @btime zeros(20, 8); 164.210 ns (2 allocations: 1.38 KiB)
 
 outannuals2 = fill(zeros(size(metrics)),length(fullyears)) # vector input, @btime fill(zeros(8),20); 82.647 ns (4 allocations: 352 bytes) NOTE: preferred.
 
@@ -651,10 +639,7 @@ outmeans1 = fill(zeros(size(metrics)), x,y,z);  @btime fill(zeros(5), 4,5,3); 14
     - for accessing: x,y are dimensions of original, z is no of (coeff, mean, pvalue and rsquared)
     - for the inner metrics: getindex.(outmeans[1], 1) # outmeans[1] == coeff  and 1 is the meanint (for example)
 
-outmeans2 = [zeros(size(metrics)) for _ in 1:x, _ in 1:y, _ in 1:z] # @btime [zeros(3,) for _ in 1:4, _ in 1:5, _ in 1:3]; 1.586 μs (122 allocations: 5.27 KiB)
-
 # annual metrics
 outannuals1 = fill(zeros(size(metrics)), x,y,z); z == no of fullyears PERF: preferred
 
-outannuals = [zeros(size(metrics)) for _ in 1:x, _ in 1:y, _ in eachindex(fullyears)]
 =#
