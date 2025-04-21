@@ -352,7 +352,7 @@ function _meanmets(evanom::Vector{AbstractFloat}, rons, rdec, fullyears, anomfn)
     return meanint, cumint, maxint, ronset, rdecline, duration, days, frequency
 end
 
-meanmets(evanom::Vector{AbstractFloat}, rons, rdcs, fyears, anomfn) = _meanmets(evanom, rons, rdcs, fyears, anomfn)
+# meanmets(evanom::Vector{AbstractFloat}, rons, rdcs, fyears, anomfn) = _meanmets(evanom, rons, rdcs, fyears, anomfn)
 
 function meanmets(evanom::Vector{Vector{AbstractFloat}}, rons, rdec, fullyears, anomfn)
     # Default metrics

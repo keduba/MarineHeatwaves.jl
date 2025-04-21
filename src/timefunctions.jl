@@ -28,9 +28,7 @@ timeindices(sdt::Union{Vector, StepRange{Date}}, edt::Union{Vector, StepRange{Da
 function timeindices(sstdate, evtdate)
     si = findfirst(isequal(first(evtdate)), sstdate)
     ei = findfirst(isequal(last(evtdate)), sstdate)
-    senix = range(si, ei)
-    elyd = leapyearday.(sstdate[senix])
-    return senix, elyd
+    return range(si, ei)
 end
 
 
