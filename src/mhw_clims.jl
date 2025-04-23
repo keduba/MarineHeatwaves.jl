@@ -1,5 +1,12 @@
 """
-tresh(indata::VecOrMat, daterange, threshold) -> climthresh::VecorMat
+helper function to select subset a vector `av` with indices from a range `dr`.
+"""
+function findices(av, dr)
+    (av[i] for i in flatten(dr))
+end
+
+"""
+    tresh(indata::VecOrMat, daterange, threshold) -> climthresh::VecorMat
 
 `tresh` calculates the climatological threshold of the `indata` to return the percentile at each point using the `threshold`. It uses `daterange` to select the specific days in the vector or matrix of the `indata` for which the desired percentile is returned.
 """
@@ -39,7 +46,7 @@ clthr(indata::VecOrMat, daterange, threshold) -> climamean, climthresh
 `clthr` combines the `clim` and `thresh` to return the climatological mean and thresholds after running `smoothdata!` to smooth the data for the given window `pctwidth` (default is 31).
 """
 
-function clthr(sst, sstdate, evdate, width, threshold, pctwidth) # mhwsst contains the mhwsst, mask and lydd
+function clthr(sst::Vector, sstdate, evdate, width, threshold, pctwidth) # mhwsst contains the mhwsst, mask and lydd
     mhwsst, mask, lydd = subtemp(sst, sstdate, evdate)
     drange = daterange(lydd, width)
     clima = clim(mhwsst, drange)
@@ -49,7 +56,7 @@ function clthr(sst, sstdate, evdate, width, threshold, pctwidth) # mhwsst contai
     return mhwsst, clima[lydd], climq[lydd], mask
 end
 
-function clthr(sst, sstdate, evdate, width, threshold, pctwidth) # mhwsst contains the mhwsst, mask and lydd
+function clthr(sst::Matrix, sstdate, evdate, width, threshold, pctwidth)
     mhwsst, mask, lydd = subtemp(sst, sstdate, evdate)
     drange = daterange(lydd, width)
     clima = reduce(hcat, clim(mhwsst, drange))

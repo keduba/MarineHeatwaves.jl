@@ -87,8 +87,9 @@ end
 `subtemp` uses the `timeindices` and `_subtemp` to return array, landmask and leapyearday.
 """
 function subtemp(sst, sstdate, evdate)
-    mhwix, elyd = timeindices(sstdate, evdate)
+    mhwix = timeindices(sstdate, evdate)
     emsst, mask = _subtemp(sst, mhwix)
+    elyd = leapyearday.(sstdate[mhwix])
     return emsst, mask, elyd
 end
 

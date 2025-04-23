@@ -186,20 +186,20 @@ function _indices(mstarts, menders, mindur, maxgap)
     # first the indices where the number of days > minimum duration
     mstts, mends = (ix[durations.≥mindur] for ix in (mstarts, menders))
     # then only those gap between starts and ends aremore than the specified maximum gap
-    hna = (mstts[2:end] - mends[1:end-1]) .> maxgap
-    return (mstts, mends, hna)
+    hna = (mstts[begin+1:end] - mends[begin:end-1]) .> maxgap
+    return mstts, mends, hna
 end
 
 function startindices(mstts, hna)
     mstartsxs = ones(Int, sum(hna) + 1)
     mstartsxs[1] = first(mstts)
-    mstartsxs[2:end] = mstts[2:end][hna] .+ 1
+    mstartsxs[begin+1:end] = mstts[begin+1:end][hna] .+ 1
     return mstartsxs
 end
 
 function endindices(mends, hna)
     mendsxs = ones(Int, sum(hna) + 1)
     mendsxs[end] = last(mends)
-    mendsxs[1:end-1] = mends[1:end-1][hna]
+    mendsxs[begin:end-1] = mends[begin:end-1][hna]
     return mendsxs
 end

@@ -25,14 +25,13 @@ function _anoms(sst, clim, thsh, lyd, mst, mse)
     return (; anom, onsan, decan, lnxt, thsd)
 end
 
-
-function _anomsnew(sst, clim, thsh, mst, mse)
-    anom = sst[mst:mse] - clim[mst:mse]
-    thsd = thsh[mst:mse] - clim[mst:mse]
-    onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
-    decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
-    return anom, onsan, decan, thsd
-end
+# function _anomsnew(sst, clim, thsh, mst, mse)
+#     anom = sst[mst:mse] - clim[mst:mse]
+#     thsd = thsh[mst:mse] - clim[mst:mse]
+#     onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
+#     decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
+#     return anom, onsan, decan, thsd
+# end
 
 _categorys(anoms) = min(4, maximum(fld.(anoms.anom, anoms.thsd)))
 
