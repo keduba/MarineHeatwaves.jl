@@ -1,9 +1,3 @@
-"""
-helper function to select subset a vector `av` with indices from a range `dr`.
-"""
-function findices(av, dr)
-    (av[i] for i in flatten(dr))
-end
 
 """
     tresh(indata::VecOrMat, daterange, threshold) -> climthresh::VecorMat

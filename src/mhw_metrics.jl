@@ -322,6 +322,7 @@ function getyears(dateobject, mst::Vector{Int}, mse::Vector{Int})
 end
 
 getyears(dateobject, mst::Vector{Vector{Int}}, mse::Vector{Vector{Int}}) = map((x, y) -> getyears(dateobject, x, y), mst, mse)
+# fullyears = unique(year.(mhwdate))
 
 #=
 test getyears:
@@ -352,7 +353,7 @@ function _meanmets(evanom::Vector{AbstractFloat}, rons, rdec, fullyears, anomfn)
     return meanint, cumint, maxint, ronset, rdecline, duration, days, frequency
 end
 
-# meanmets(evanom::Vector{AbstractFloat}, rons, rdcs, fyears, anomfn) = _meanmets(evanom, rons, rdcs, fyears, anomfn)
+meanmets(evanom::Vector{AbstractFloat}, rons, rdcs, fyears, anomfn) = _meanmets(evanom, rons, rdcs, fyears, anomfn)
 
 function meanmets(evanom::Vector{Vector{AbstractFloat}}, rons, rdec, fullyears, anomfn)
     # Default metrics
@@ -482,7 +483,8 @@ function annualmets2(evanom, ronset, rdecline, eventyears, startyear, endyear, f
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :ronset, :rdecline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
+    # ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
+    ametrics = fill(zeros(4), 5)
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), eventyears)
         yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]
@@ -505,8 +507,8 @@ function annualmets3(evanom, ronset, rdecline, eventyears, startyear, endyear, f
     # lfy = length(fullyears)
     metrics = (:meanint, :cumint, :onset, :decline, :duration, :maxint, :days, :frequency)
     evanomf = collect(Iterators.flatten(evanom))
-    # ametrics = NamedTuple(zip(metrics, ntuple(_ -> zeros(length(fullyears)), length(metrics))))
-    ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
+    # ametrics = [zeros(length(metrics)) for _ in eachindex(fullyears)]
+    ametrics = fill(zeros(length(metrics)), Val(length(fullyears)))
     for (ey, yr) in enumerate(fullyears)
         yearixs = findall(isequal(yr), eventyears)
         yrix = [i for (i, (a, b)) in enumerate(zip(startyear, endyear)) if a == yr || b == yr]

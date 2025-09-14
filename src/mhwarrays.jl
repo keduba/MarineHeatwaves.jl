@@ -57,7 +57,7 @@ Base.IteratorSize(::Base.Iterators.Flatten{<:AbstractVector{<:UnitRange}}) = Bas
 
 Returns only sea areas. Optional dimension. For arrays, expected dimension is the 3rd dimension.
 """
-seamask(sst, dims=3) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
+seamask(sst, dims) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
 
 """
     _subtemp(sst::Array{T, N}, sstindex) -> subsst, mask indices
@@ -78,6 +78,7 @@ function _subtemp(sst::Array, mhwix)
     xz = seamask(sst)
     mask = CartesianIndices(xz)[xz]
     msst = sst[mask, mhwix]'
+    # msst = permutedims(sst[mask, mhwix])
     return msst, mask
 end
 
@@ -86,11 +87,11 @@ end
 
 `subtemp` uses the `timeindices` and `_subtemp` to return array, landmask and leapyearday.
 """
-function subtemp(sst, sstdate, evdate)
-    mhwix = timeindices(sstdate, evdate)
-    emsst, mask = _subtemp(sst, mhwix)
+function subtemp(sst, sstdate, mhwdate)
+    mhwix = timeindices(sstdate, mhwdate)
+    mhtemp, CIs = _subtemp(sst, mhwix)
     elyd = leapyearday.(sstdate[mhwix])
-    return emsst, mask, elyd
+    return mhtemp, CIs, elyd
 end
 
 """

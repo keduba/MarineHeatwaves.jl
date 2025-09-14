@@ -35,6 +35,25 @@ function linreg(x::AbstractVector, y::AbstractVector)
     sigma_b = sigma_e / sqrt(ssxx)
 
 
+    # Calculate the F-statistic
+    f_stat = (ssxy^2 / ssxx) / (ssyy - ssxy^2 / ssxx) * (n - 2)
+
+    # Calculate the p-value for the F-statistic
+    p_value = 1 - cdf(FDist(1, n - 2), f_stat)
+
+    # Calculate the t-statistic for the slope (b)
+    t_stat_b = b / sigma_b
+
+    # Calculate the p-value for the t-statistic
+    p_value_b = 2 * (1 - cdf(TDist(n - 2), abs(t_stat_b)))
+
+    # Calculate T-Distribution p-value
+    t_stat = b / sigma_b
+    p_value_t = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
+
+    # Calculate F-Distribution p-value
+    f_stat = r2 / (1 - r2) * (n - 2) / 1
+    p_value_f = 1 - cdf(FDist(1, n - 2), f_stat)
     return a, b, r2, sigma_a, sigma_b, sigma_e
 end
 
