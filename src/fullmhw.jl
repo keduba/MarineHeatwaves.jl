@@ -71,3 +71,30 @@ struct MHWCSO{T<:AbstractVecOrMat{<:AbstractFloat}}
     outrsquared::T
 end
 
+for op = (:length,  :maximum, :minimum, :argmax, :argmin, :sum,  :first, :last)
+    @eval begin
+        Base.$op(a::MHWrapper) = $op(a.anom)
+        Base.$op(a::MCWrapper) = $op(a.anom)
+        Base.$op(a::EventsHW) = $op(a.minimaxes)
+        Base.$op(a::EventsCS) = $op(a.minimaxes)
+    end
+end
+
+for op = (:mean, :std)
+    @eval begin
+        $op(a::MHWrapper) = $op(a.anom)
+        $op(a::MCWrapper) = $op(a.anom)
+    end
+end
+
+mhcsminimax(a::MHWrapper) = maximum(a)
+mhcsminimax(a::MCWrapper) = minimum(a)
+
+mhcsminimax(a::EventHW) = maximum(a)
+mhcsminimax(a::EventCS) = minimum(a)
+
+mhcsarg(a::MHWrapper) = argmax(a)
+mhcsarg(a::MCWrapper) = argmin(a)
+
+
+
