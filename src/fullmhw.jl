@@ -75,8 +75,6 @@ for op = (:length,  :maximum, :minimum, :argmax, :argmin, :sum,  :first, :last)
     @eval begin
         Base.$op(a::MHWrapper) = $op(a.anom)
         Base.$op(a::MCWrapper) = $op(a.anom)
-        Base.$op(a::EventsHW) = $op(a.minimaxes)
-        Base.$op(a::EventsCS) = $op(a.minimaxes)
     end
 end
 
@@ -90,11 +88,16 @@ end
 mhcsminimax(a::MHWrapper) = maximum(a)
 mhcsminimax(a::MCWrapper) = minimum(a)
 
-mhcsminimax(a::EventHW) = maximum(a)
-mhcsminimax(a::EventCS) = minimum(a)
-
 mhcsarg(a::MHWrapper) = argmax(a)
 mhcsarg(a::MCWrapper) = argmin(a)
 
+# we expect Events to currently return Vector{Vector{T}} so the following function is targeting the field we want.
 
+function mhcsminimax(x::EventsHW)
+    return @inbounds [maximum(ia) for ia in x.minimaxes]
+end
+
+function mhcsminimax(x::EventsCS)
+    return @inbounds [minimum(ia) for ia in x.minimaxes]
+end
 
