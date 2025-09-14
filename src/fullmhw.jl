@@ -47,18 +47,20 @@ struct MCS{T<:AbstractVecOrMat{<:AbstractFloat}}
     exceeds::Array{Bool}
 end
 
+struct MHW{T<:AbstractVecOrMat{<:AbstractFloat}}
+    temp::T
+    clim::T
+    thresh::T
+    exceeds::Array{Bool}
+end
+
 function MHW(temp, clim, thresh)
     exc = _excess(temp, thresh)
-    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc)
+    MHW{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc)
 end
 
 function MCS(temp, clim, thresh)
     exc = _excess(thresh, temp)
-    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc)
-end
-
-function MCS(temp, clim, thresh, event=:mhw)
-    exc = event == :mhw ? _excess(temp, thresh) : _excess(thresh, temp)
     MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc)
 end
 
@@ -138,4 +140,73 @@ function _subtemp(sst::AbstractArray, mhwix::Range, clmix::Range)
     end
 end
 
+MarineHW(args...)::MHW = MHW(subtemp(args...)...)
+MarineCS(args...)::MCS = MCS(subtemp(args...)...)
+
+leapyearday(mts::Date)::TI = dayofyear(mts) > 59 && !isleapyear(mts) ? dayofyear(mts) + 1 : dayofyear(mts)
+
+_excess(tp, th) = tp .> th
+
+function subtemp(sst, sstdate::Date, mhwdate::Date, clmdate::Date)
+    mhwix = timeindices(sstdate, mhwdate)
+    clmix = timeindices(sstdate, clmdate)
+    mlyd = leapyearday.(sstdate[mhwix])
+    clyd = leapyearday.(sstdate[clmix])
+    mhtemp, ctemp, CIs = _subtemp(sst, mhwix, clmix)
+    clima, thresh = climthresh(cltemp, clyd, mlyd, window, smoothwindow, threshold)
+
+    return mhtemp, clima, thresh
+end
+
+function climthresh(cmst, clyd, mlyd, win::TI, swindow::TI, threshold::T)
+    # T =  eltype(cmst)
+    clim = Matrix{T}(undef, length(mlyd), size(cmst, 2))
+    thresh = similar(clim)
+    uranges = urange(clyd, win)
+    cv = Vector{T}(undef, 366)
+    th = similar(cv)
+    for (n, vec) in enumerate(eachcol(cmst))
+        for (m, ur) in enumerate(uranges)
+            cvc = Iterators.flatten([vec[i] for i in ur])
+            cv[m] = mean(cvc)
+            th[m] = quantile(cvc, threshold)
+        end
+        cv[60] = 0.5(cv[59] + cv[61])
+        th[60] = 0.5(th[59] + th[61])
+        clim[:, n] = moving_means(cv, swindow, mlyd)
+        thresh[:, n] = moving_means(th, swindow, mlyd)
+    end
+    clim, thresh
+end
+
+function moving_means(mt::Vector, pwidth, lyd; wrap=true)
+    out = Vector{eltype(mt)}(undef, length(lyd))
+    ins = moving_mean(mt, pwidth, wrap)
+    for (i, t) in enumerate(lyd)
+        @views out[i] = ins[t]
+    end
+    out
+end
+
+function moving_mean(A::AbstractVector, m::TI, wrap::Bool) 
+    out = similar(A)
+    R = LinearIndices(A)
+    m2 = trunc(TI, 0.5m)
+    Ifirst, Ilast = first(R), last(R)
+    I1 = m2 * oneunit(Ifirst)
+    if wrap
+        R = axes(A, 1) .+ m2
+        A = vcat(last(A, m2), A, first(A, m2))
+        Ilast = lastindex(A)
+    end
+    for (I, J) in pairs(R)
+        n, s = 0, zero(eltype(out))
+        for K in max(Ifirst, J - I1):min(Ilast, J + I1)
+            s += A[K]
+            n += 1
+        end
+        out[I] = s / n
+    end
+    return out
+end
 
