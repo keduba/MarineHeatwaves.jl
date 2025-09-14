@@ -5,6 +5,9 @@ using Dates
 using NCDatasets
 using SparseArrays
 
+const T = Float32
+const TI = Int16
+
 struct MHWrapper{T} 
     anom::Array{T}
     threshanom::Array{T}
@@ -100,4 +103,39 @@ end
 function mhcsminimax(x::EventsCS)
     return @inbounds [minimum(ia) for ia in x.minimaxes]
 end
+
+function timeindices(sstdate::Date, evtdate::Date)
+    si::TI = findfirst(isequal(first(evtdate)), sstdate)
+    ei::TI = findfirst(isequal(last(evtdate)), sstdate)
+    return range(si, ei)
+end
+
+seamask(sst::AbstractArray, dims) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
+
+function _subtemp(sst::AbstractArray, mhwix::Range, clmix::Range)
+    N = ndims(sst)
+    N ≤ 0 && error("0-dimensional data just can't work.")
+
+    xz = seamask(sst, N)
+    !xz[1] && error("Please check your data. It appears to be all `NaN` or `missing`.")
+
+    if N > 1
+        CIx = CartesianIndices(xz)[xz]
+        @views begin
+            msst = permutedims(sst[CIx, mhwix])
+            csst = permutedims(sst[CIx, clmix])
+        end
+        x, y = Base.front(size(sst))
+        nCIx = setdiff(CartesianIndices((x, y)), CIx)
+        return msst, csst, (CIx, nCIx, x, y)
+    elseif N == 1
+        CIx = TI(xz[1])
+        @views begin
+            msst = sst[mhwix]
+            csst = sst[clmix]
+        end
+        return msst, csst, CIx
+    end
+end
+
 
