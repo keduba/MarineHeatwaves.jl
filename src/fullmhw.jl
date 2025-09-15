@@ -10,6 +10,7 @@ const TI = Int16
 
 abstract type MExtreme end
 abstract type MWrapper end
+abstract type Events end
 
 struct MHWrapper{T} <: MWrapper 
     anom::Array{T}
@@ -25,7 +26,7 @@ struct MCWrapper{T} <: MWrapper
     decline::T
 end
 
-struct EventsHW{T}
+struct EventsHW{T} <: Events
     means::Array{T, 1}
     minimaxes::Array{T, 1}
     onset::Array{T, 1}
@@ -34,7 +35,7 @@ struct EventsHW{T}
     sums::Array{T, 1}
 end
 
-struct EventsCS{T}
+struct EventsCS{T} <: Events
     means::Array{T, 1}
     minimaxes::Array{T, 1}
     onset::Array{T, 1}
@@ -324,5 +325,24 @@ function _events(anom::MWrapper)
     maxes = mhcsminimax(anom)
     durs = length(anom)
     return means, cums, maxes, durs
+end
+
+function meanmetrics3(ev::Events, indices, mdate)
+    CIx, nCIx, x, y = indices
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    outmean = ntuple(_ -> Matrix{T}(undef, x, y), z) 
+    for i in eachindex(outmean)
+        outmean[i][nCIx] .= T(NaN)
+    end
+    for (xy, fm) in enumerate((means, cums, onsan, decan, durs))
+        outmean[xy][CIx] = mean.(fm)
+    end
+    outmean[6][CIx] = mhcsminimax(ev) # mhcminimax(ev.maxes)
+    # NOTE: list comprehension maybe inline? instead of acting on ev directly 1. [mhcsminimax(mx) for mx in ev.maxes] if mx is a wrapped type
+    # 2. mhcsminimax(ev.maxes) where ev.maxes is also a wrapped type taking vector{T} or V{V{T}}. In this case, no distinction of Events, i.e. one type.
+    outmean[7][CIx] = @. length(durs) / lfy # frequency
+    outmean[z][CIx] = @. sum(durs) / lfy #days
+    outmean
 end
 
