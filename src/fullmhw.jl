@@ -8,6 +8,15 @@ using SparseArrays
 const T = Float32
 const TI = Int16
 
+const metrics = Dict(:means => 1,
+                     :maxes => 2,
+                     :sums => 3,
+                     :duration => 4,
+                     :frequency => 5,
+                     :days => 6,
+                     :onset => 7,
+                     :decline => 8)
+
 abstract type MExtreme end
 abstract type MWrapper end
 abstract type Events end
@@ -335,14 +344,18 @@ function meanmetrics3(ev::Events, indices, mdate)
     for i in eachindex(outmean)
         outmean[i][nCIx] .= T(NaN)
     end
-    for (xy, fm) in enumerate((means, cums, onsan, decan, durs))
-        outmean[xy][CIx] = mean.(fm)
+    # check the metrics dictionary to ensure order of variables
+    for fm in (:means, :sums, :onset, :decline, :duration)
+        idx = metrics[fm]
+        outmean[idx][CIx]  = mean.(ev.fm)
+        setindex!(outmean[idx], CIx, mean.(ev.fm))
     end
+
     outmean[6][CIx] = mhcsminimax(ev) # mhcminimax(ev.maxes)
     # NOTE: list comprehension maybe inline? instead of acting on ev directly 1. [mhcsminimax(mx) for mx in ev.maxes] if mx is a wrapped type
     # 2. mhcsminimax(ev.maxes) where ev.maxes is also a wrapped type taking vector{T} or V{V{T}}. In this case, no distinction of Events, i.e. one type.
-    outmean[7][CIx] = @. length(durs) / lfy # frequency
-    outmean[z][CIx] = @. sum(durs) / lfy #days
+    outmean[7][CIx] = @. length(ev.durs) / lfy # frequency
+    outmean[z][CIx] = @. sum(ev.durs) / lfy #days
     outmean
 end
 
