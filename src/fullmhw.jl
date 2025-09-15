@@ -311,9 +311,9 @@ function anomsa(m::MExtreme, evst, indices)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             outcat[CIx[c], st:se] .= categorys(atod)
-            onsan[c][d] = _onset2(atod, st)
-            decan[c][d] = _decline2(atod, se, lm)
-            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events2(atod)# vars[c][d]
+            onsan[c][d] = _onset(atod, st)
+            decan[c][d] = _decline(atod, se, lm)
+            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)# vars[c][d]
         end
     end
     for bl in (outemp, outhsh, outcat)
@@ -350,12 +350,66 @@ function meanmetrics3(ev::Events, indices, mdate)
         outmean[idx][CIx]  = mean.(ev.fm)
         setindex!(outmean[idx], CIx, mean.(ev.fm))
     end
-
     outmean[6][CIx] = mhcsminimax(ev) # mhcminimax(ev.maxes)
     # NOTE: list comprehension maybe inline? instead of acting on ev directly 1. [mhcsminimax(mx) for mx in ev.maxes] if mx is a wrapped type
     # 2. mhcsminimax(ev.maxes) where ev.maxes is also a wrapped type taking vector{T} or V{V{T}}. In this case, no distinction of Events, i.e. one type.
     outmean[7][CIx] = @. length(ev.durs) / lfy # frequency
     outmean[z][CIx] = @. sum(ev.durs) / lfy #days
     outmean
+end
+
+function anumets4(ev::Events, indices, mdate, evst)
+    cst, cse, cols = evst
+    
+    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
+    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
+    mapyst = map(x -> year.(mdate[x]), cst)
+    mapyse = map(x -> year.(mdate[x]), cse)
+    lfy = (length ∘ unique)(year.(mdate))
+    CIx, nCIx, x, y = indices
+    z =  length(metrics)
+    outannual = ntuple(_ -> Array{T, 3}(undef, x, y, lfy), z)
+    for i in eachindex(outannual)
+        outannual[i][nCIx, :] .= T(NaN)
+    end
+    for j in eachindex(outannual)
+        for (h, cx, mz, my, mt, me) in zip(cols, CIx, mapcste, mapyr, mapyst, mapyse)
+            for (i, yr) in zip(mz, my)
+                yx = findall(yr .== mt) 
+                if isempty(yx) 
+                    yx = findall(yr .== me)
+                end
+                if j == 6 
+                    # TODO: Fix mini-maximum and type passed to allow indexing
+                    outannual[j][cx, i] = maximum(ev[j][h][yx]) # WARN: change maximum to minimax
+                elseif j == 7
+                    outannual[j][cx, i] = convert(T, length(yx))
+                elseif j == 8
+                    outannual[j][cx, i] = length(ev[6][h][yx])
+                else
+                    outannual[j][cx, i] = mean(ev[j][h][yx])
+                end
+            end
+        end
+    end
+    outannual
+end
+
+# outannual is a tuple of 3-D arrays
+function trend2(outannual, indices)
+    CIx, nCIx, x, y = indices
+    X = 1:size(first(outannual), 3)
+    z = 8 # no of metrics
+    outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    for i in 1:z
+        for ci in CIx
+            outpvalue[i][ci],
+            outcoeff[i][ci],
+                outrsqd[i][ci] = linreg(X, outannual[i][ci,:])
+        end
+    end
+    outpvalue,outcoeff, outrsqd
 end
 
