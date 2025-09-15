@@ -360,7 +360,7 @@ end
 
 function anumets4(ev::Events, indices, mdate, evst)
     cst, cse, cols = evst
-    
+    f = isa(EventsHW, ev) ? maximum : minimum 
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
     mapyst = map(x -> year.(mdate[x]), cst)
@@ -372,20 +372,31 @@ function anumets4(ev::Events, indices, mdate, evst)
     for i in eachindex(outannual)
         outannual[i][nCIx, :] .= T(NaN)
     end
-    for j in eachindex(outannual)
+    for j in eachindex(outannual)# To remove this outer loop
         for (h, cx, mz, my, mt, me) in zip(cols, CIx, mapcste, mapyr, mapyst, mapyse)
             for (i, yr) in zip(mz, my)
                 yx = findall(yr .== mt) 
                 if isempty(yx) 
                     yx = findall(yr .== me)
                 end
+                # NOTE: Added
+                for fm in (:means, :sums, :onset, :decline, :duration)
+                    idx = metrics[fm]
+                    # outmean[idx][CIx]  = mean.(ev.fm)
+                    setindex!(outannual[idx], cx, i, mean(ev.fm[h][yx]))
+                end
+                setindex!(outannual[6], cx, i, f(ev.maxes[h][yx]))
+                setindex!(outannual[7], cx, i, convert(T, length(yx)))
+                setindex!(outannual[z], cx, i, length(ev.durations[h][yx])) 
                 if j == 6 
                     # TODO: Fix mini-maximum and type passed to allow indexing
-                    outannual[j][cx, i] = maximum(ev[j][h][yx]) # WARN: change maximum to minimax
-                elseif j == 7
+                    # create a wrapper that's a type of array
+                    # outannual[j][cx, i] = maximum(ev[j][h][yx]) # WARN: change maximum to minimax
+                    outannual[j][cx, i] = f(ev.maxes[h][yx]) # WARN: change maximum to minimax
+                elseif j == 7 # frequency maybe
                     outannual[j][cx, i] = convert(T, length(yx))
-                elseif j == 8
-                    outannual[j][cx, i] = length(ev[6][h][yx])
+                elseif j == 8 # durations
+                    outannual[j][cx, i] = length(ev.durations[h][yx])
                 else
                     outannual[j][cx, i] = mean(ev[j][h][yx])
                 end
