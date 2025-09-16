@@ -99,7 +99,7 @@ struct MHWCSO{T<:AbstractVecOrMat{<:AbstractFloat}}
     outrsquared::T
 end
 
-for op = (:length,  :maximum, :minimum, :argmax, :argmin, :sum,  :first, :last)
+for op = (:length, :maximum, :minimum, :argmax, :argmin, :sum,  :first, :last)
     @eval begin
         Base.$op(a::MHWrapper) = $op(a.anom)
         Base.$op(a::MCWrapper) = $op(a.anom)
@@ -457,3 +457,41 @@ for (f, fn) in ((:pvalues, :outpvalue), (:coeffs, :outcoeff), (:rsquared, :outrs
     end
 end
 
+function mymetric(ev::MEvents, metric)
+    fd = fieldnames(ev)
+    if metric in fd
+        return reduce(vcat, ev.$metric)
+    else
+        throw(Keyerror(metric))
+        @info "Perhaps you mean one of ", print(keys(metric))
+    end
+end
+
+
+function mymetric(ev::MEvents)
+    # Return a vector of vectors
+    [reduce(vcat, ev.t) for t in fieldnames(ev)]
+end
+
+    # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
+
+function mymetric(ev::MEvents, indices)
+    # Return a the metrics as vector or matrix
+    mymetric(ev)
+    cix = getindex(indices, 1)
+    # the number of events per pixel
+    drs = length.(ev.fieldnames(ev)[1])
+    ix = TI[]
+    iy = TI[]
+    for (q, s) in zip(drs, cix)
+        append!(ix, repeat([Tuple(s)[1]], q))
+        append!(iy, repeat([Tuple(s)[2]], q))
+    end
+    @assert length(ix) == length(iy) == sum(drs)
+end
+
+function mymetric(mm::MExtreme, arg::Symbol=:anom)
+    nothing
+    # return clim, thresh or exceedance as 3-D arrays
+    # Matrix to Array conversion: require indices 
+end
