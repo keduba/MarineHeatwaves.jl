@@ -444,6 +444,11 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices)
     outpvalue, outcoeff, outrsqd
 end
 
+####
+# Here begin the Interfaces to access the results and outputs
+# NOTE: the internal variable `indices` has to be stored somewhere in one of the outward structs if it is to be used to return 2D to 3D outputs
+####
+
 for (f, fn) in ((:pvalues, :outpvalue), (:coeffs, :outcoeff), (:rsquared, :outrsquared))
     @eval begin
         function $f(am::MHWCSO, metric)
@@ -476,7 +481,7 @@ end
     # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
  
 function mymetric(ev::MEvents, indices)
-    # Return a the metrics as vector or matrix
+    # Return a the metrics as vector 
     mymetric(ev)
     cix = getindex(indices, 1)
     # the number of events per pixel
@@ -491,25 +496,37 @@ function mymetric(ev::MEvents, indices)
 end
 
 function mymetric(mm::MExtreme, indices, arg::Symbol=:anom)
-    nothing
     # return clim, thresh or exceedance as 3-D arrays
     # Matrix to Array conversion: require indices 
+    # mapping the argument to the fieldnames of the mm
+    Dict(:anom => :anoma,
+         :thresh => :threshold,
+         :exceeds => :exceedance)
+
     arg in fieldnames(typeof(mm)) || throw(KeyError(arg))
     gh = getfield(mm, arg)
-    
-    _outarrays(gh, indices)
-
+    return _outarrays(gh, indices)
 end
 
-function _outarrays(gg, indices)
+function mymetric(mm::MHWCSO, arg::Symbol=:anom)
+    # return clim, thresh or exceedance as 3-D arrays
+    # Matrix to Array conversion: require indices 
+    # mapping the argument to the fieldnames of the mm
+    Dict(:anom => :anoma,
+         :thresh => :threshold,
+         :exceeds => :exceedance)
+
+    arg in fieldnames(typeof(mm)) || throw(KeyError(arg))
+    return gh = getfield(mm, arg)
+end
+
+function _outarrays(gg::Matrix{T}, indices)
     CIx, nCIx, x, y = indices
-    oclim = Array{eltype(gg), 3}(undef, x, y, size(clim, 1))
+    oclim = Array{T, 3}(undef, x, y, size(gg, 1))
     for (col, cx) in enumerate(CIx)
-        oclim[cx, :] = clim[:, col]
+        oclim[cx, :] = gg[:, col]
     end
-    for v in (oclim, othresh, oexceedance)
-        v[nCIx, :] .= NaN
-    end
-    oclim, othresh, oexceedance
+    oclim[nCIx, :] .= NaN
+    oclim
 end
 
