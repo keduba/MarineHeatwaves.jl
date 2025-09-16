@@ -474,7 +474,7 @@ function mymetric(ev::MEvents)
 end
 
     # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
-
+ 
 function mymetric(ev::MEvents, indices)
     # Return a the metrics as vector or matrix
     mymetric(ev)
@@ -490,8 +490,26 @@ function mymetric(ev::MEvents, indices)
     @assert length(ix) == length(iy) == sum(drs)
 end
 
-function mymetric(mm::MExtreme, arg::Symbol=:anom)
+function mymetric(mm::MExtreme, indices, arg::Symbol=:anom)
     nothing
     # return clim, thresh or exceedance as 3-D arrays
     # Matrix to Array conversion: require indices 
+    arg in fieldnames(typeof(mm)) || throw(KeyError(arg))
+    gh = getfield(mm, arg)
+    
+    _outarrays(gh, indices)
+
 end
+
+function _outarrays(gg, indices)
+    CIx, nCIx, x, y = indices
+    oclim = Array{eltype(gg), 3}(undef, x, y, size(clim, 1))
+    for (col, cx) in enumerate(CIx)
+        oclim[cx, :] = clim[:, col]
+    end
+    for v in (oclim, othresh, oexceedance)
+        v[nCIx, :] .= NaN
+    end
+    oclim, othresh, oexceedance
+end
+
