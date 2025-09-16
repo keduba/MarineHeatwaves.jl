@@ -19,7 +19,7 @@ const metrics = Dict(:means => 1,
 
 abstract type MExtreme end
 abstract type MWrapper end
-abstract type Events end
+abstract type MEvents end
 
 struct MHWrapper{T} <: MWrapper 
     anom::Array{T}
@@ -35,22 +35,32 @@ struct MCWrapper{T} <: MWrapper
     decline::T
 end
 
-struct EventsHW{T} <: Events
+struct EventsHW{T} <: MEvents
     means::Array{T, 1}
     minimaxes::Array{T, 1}
     onset::Array{T, 1}
     decline::Array{T, 1}
     duration::Array{T, 1}
     sums::Array{T, 1}
+    EventHW::DataType
 end
 
-struct EventsCS{T} <: Events
+struct EventsCS{T} <: MEvents
     means::Array{T, 1}
     minimaxes::Array{T, 1}
     onset::Array{T, 1}
     decline::Array{T, 1}
     duration::Array{T, 1}
     sums::Array{T, 1}
+    dtype::EventCS
+end
+
+struct EventHW{T} <: MEvents
+    maxes::Array{T, 1}
+end
+
+struct EventCS{T} <: MEvents
+    maxes::Array{T, 1}
 end
 
 struct MCS{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
@@ -110,13 +120,15 @@ mhcsarg(a::MHWrapper) = argmax(a)
 mhcsarg(a::MCWrapper) = argmin(a)
 
 # we expect Events to currently return Vector{Vector{T}} so the following function is targeting the field we want.
+mhcsminimax(x::EventHW{Vector{T}}) = maximum(x.maxes)
+mhcsminimax(x::EventCS{Vector{T}}) = minimum(x.maxes)
 
-function mhcsminimax(x::EventsHW)
-    return @inbounds [maximum(ia) for ia in x.minimaxes]
+function mhcsminimax(x::EventHW{Vector{Vector{T}}})
+    return @inbounds [maximum(ia) for ia in x.maxes]
 end
 
-function mhcsminimax(x::EventsCS)
-    return @inbounds [minimum(ia) for ia in x.minimaxes]
+function mhcsminimax(x::EventCS{Vector{Vector{T}}})
+    return @inbounds [minimum(ia) for ia in x.maxes]
 end
 
 function timeindices(sstdate::Date, evtdate::Date)
@@ -350,7 +362,9 @@ function meanmetrics3(ev::Events, indices, mdate)
         outmean[idx][CIx]  = mean.(ev.fm)
         setindex!(outmean[idx], CIx, mean.(ev.fm))
     end
-    outmean[6][CIx] = mhcsminimax(ev) # mhcminimax(ev.maxes)
+    E = ev.dtype
+    outmean[6][CIx] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
+
     # NOTE: list comprehension maybe inline? instead of acting on ev directly 1. [mhcsminimax(mx) for mx in ev.maxes] if mx is a wrapped type
     # 2. mhcsminimax(ev.maxes) where ev.maxes is also a wrapped type taking vector{T} or V{V{T}}. In this case, no distinction of Events, i.e. one type.
     outmean[7][CIx] = @. length(ev.durs) / lfy # frequency
@@ -360,7 +374,7 @@ end
 
 function anumets4(ev::Events, indices, mdate, evst)
     cst, cse, cols = evst
-    f = isa(EventsHW, ev) ? maximum : minimum 
+    # f = isa(EventsHW, ev) ? maximum : minimum 
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
     mapyst = map(x -> year.(mdate[x]), cst)
@@ -368,6 +382,7 @@ function anumets4(ev::Events, indices, mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     CIx, nCIx, x, y = indices
     z =  length(metrics)
+    E = ev.dtype
     outannual = ntuple(_ -> Array{T, 3}(undef, x, y, lfy), z)
     for i in eachindex(outannual)
         outannual[i][nCIx, :] .= T(NaN)
@@ -385,7 +400,7 @@ function anumets4(ev::Events, indices, mdate, evst)
                     # outmean[idx][CIx]  = mean.(ev.fm)
                     setindex!(outannual[idx], cx, i, mean(ev.fm[h][yx]))
                 end
-                setindex!(outannual[6], cx, i, f(ev.maxes[h][yx]))
+                setindex!(outannual[6], cx, i, mhcsminimax(E(ev.minimaxes[h][yx])))
                 setindex!(outannual[7], cx, i, convert(T, length(yx)))
                 setindex!(outannual[z], cx, i, length(ev.durations[h][yx])) 
                 # if j == 6 
@@ -427,5 +442,18 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices)
         end
     end
     outpvalue, outcoeff, outrsqd
+end
+
+for (f, fn) in ((:pvalues, :outpvalue), (:coeffs, :outcoeff), (:rsquared, :outrsquared))
+    @eval begin
+        function $f(am::MHWCSO, metric)
+            idx = get(metrics, metric, metric)
+            if typeof(idx) == Int
+                return getindex(am.$fn, idx)
+            else
+                throw(KeyError(idx))
+            end
+        end
+    end
 end
 
