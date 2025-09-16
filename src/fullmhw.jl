@@ -388,39 +388,44 @@ function anumets4(ev::Events, indices, mdate, evst)
                 setindex!(outannual[6], cx, i, f(ev.maxes[h][yx]))
                 setindex!(outannual[7], cx, i, convert(T, length(yx)))
                 setindex!(outannual[z], cx, i, length(ev.durations[h][yx])) 
-                if j == 6 
-                    # TODO: Fix mini-maximum and type passed to allow indexing
-                    # create a wrapper that's a type of array
-                    # outannual[j][cx, i] = maximum(ev[j][h][yx]) # WARN: change maximum to minimax
-                    outannual[j][cx, i] = f(ev.maxes[h][yx]) # WARN: change maximum to minimax
-                elseif j == 7 # frequency maybe
-                    outannual[j][cx, i] = convert(T, length(yx))
-                elseif j == 8 # durations
-                    outannual[j][cx, i] = length(ev.durations[h][yx])
-                else
-                    outannual[j][cx, i] = mean(ev[j][h][yx])
-                end
+                # if j == 6 
+                #     # TODO: Fix mini-maximum and type passed to allow indexing
+                #     # create a wrapper that's a type of array
+                #     # outannual[j][cx, i] = maximum(ev[j][h][yx]) # WARN: change maximum to minimax
+                #     outannual[j][cx, i] = f(ev.maxes[h][yx]) # WARN: change maximum to minimax
+                # elseif j == 7 # frequency maybe
+                #     outannual[j][cx, i] = convert(T, length(yx))
+                # elseif j == 8 # durations
+                #     outannual[j][cx, i] = length(ev.durations[h][yx])
+                # else
+                #     outannual[j][cx, i] = mean(ev[j][h][yx])
+                # end
             end
         end
     end
     outannual
 end
 
-# outannual is a tuple of 3-D arrays
-function trend2(outannual, indices)
+# Input: outannual is a tuple of 3-D arrays
+# Output: each metric is a tuple of Matrices
+function trend(outannual::NTuple{N, Array{T, 3}}, indices)
     CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
-    z = 8 # no of metrics
+    z = 8 # no of metrics length(outannual)
     outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
     for i in 1:z
         for ci in CIx
-            outpvalue[i][ci],
             outcoeff[i][ci],
-                outrsqd[i][ci] = linreg(X, outannual[i][ci,:])
+            outrsqd[i][ci], outpvalue[i][ci], = linreg(X, outannual[i][ci,:])
+            # V2 if linreg returns without pvalues
+            # outlg = linreg(X, outannual[i][ci,:])
+            # outpvalue[i][ci] = _pvalue(outlg)
+            # outcoeff[i][ci] = getindex(outlg, 2)
+            # outrsqd[i][ci] = getindex(outlg, 3)
         end
     end
-    outpvalue,outcoeff, outrsqd
+    outpvalue, outcoeff, outrsqd
 end
 
