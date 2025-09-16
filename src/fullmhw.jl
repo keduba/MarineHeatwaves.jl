@@ -185,7 +185,7 @@ function subtemp(sst, sstdate::Date, mhwdate::Date, clmdate::Date)
     return mhtemp, clima, thresh
 end
 
-function climthresh(cmst, clyd, mlyd, win::TI, swindow::TI, threshold::T)
+function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T) # wrap?
     # T =  eltype(cmst)
     clim = Matrix{T}(undef, length(mlyd), size(cmst, 2))
     thresh = similar(clim)
@@ -203,6 +203,25 @@ function climthresh(cmst, clyd, mlyd, win::TI, swindow::TI, threshold::T)
         clim[:, n] = moving_means(cv, swindow, mlyd)
         thresh[:, n] = moving_means(th, swindow, mlyd)
     end
+    clim, thresh
+end
+
+function climthresh(cmst::Vector{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T)
+    # T =  eltype(cmst)
+    # clim = Vector{T}(undef, length(mlyd))
+    # thresh = similar(clim)
+    uranges = urange(clyd, win)
+    cv = Vector{T}(undef, 366)
+    th = similar(cv)
+    for (m, ur) in enumerate(uranges)
+        cvc = Iterators.flatten([cmst[i] for i in ur])
+        cv[m] = mean(cvc)
+        th[m] = quantile(cvc, threshold)
+    end
+    cv[60] = 0.5(cv[59] + cv[61])
+    th[60] = 0.5(th[59] + th[61])
+    clim = moving_means(cv, swindow, mlyd)
+    thresh = moving_means(th, swindow, mlyd)
     clim, thresh
 end
 
@@ -240,9 +259,9 @@ end
 function urange(clyd::Vector{TI}, win::TI)
     out = [[] for _ in 1:366]
     for n in 1:366
-           for (x, ) in Iterators.filter(p -> isequal(n, p.second), pairs(clyd))
-               push!(out[n], max(1, x-win):min(length(clyd), x+win))
-           end
+       for (x, ) in Iterators.filter(p -> isequal(n, p.second), pairs(clyd))
+           push!(out[n], max(1, x-win):min(length(clyd), x+win))
+       end
     end
     out
 end
@@ -278,6 +297,31 @@ function _mylabel(ms::MExtreme, mindur::TI, maxgap::TI)
         push!(cols, c)
     end
     cstt, csee, cols
+end
+
+function _mylabel(ms::Union{MHW{Vector{T}}, MCS{Vector{T}}}, mindur, maxgap) 
+    sty = excess(ms)
+    stb = sparse(diff(sty))
+    cst = TI[] 
+    cse = TI[]
+    for i in nzrange(stb, c)
+        if isequal(nonzeros(stb)[i], -1)
+            push!(cse, rowvals(stb)[i])
+        else
+            push!(cst, rowvals(stb)[i])
+        end
+    end
+    first(sty) ? pushfirst!(cst, 1) : nothing
+    last(sty) ? push!(cse, lastindex(sty, 1)) : nothing
+    length(cse) == length(cst)
+    dur = cse - cst 
+    stss = cst[dur .≥ mindur]
+    enss = cse[dur .≥ mindur]
+    dft = stss[2:end] - enss[1:end-1] .> maxgap
+    isempty(dft) && error("No event was detected")
+    keepat!(stss, [true; dft])
+    keepat!(enss, [dft; true])
+    stss, enss, 1
 end
 
 function _anomsa(M::DataType, sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::TI, lm::TI)
@@ -335,6 +379,31 @@ function anomsa(m::MExtreme, evst, indices)
     return outemp, outhsh, outcat, Ev(onsan, decan, means, cums, maxes, durs)
 end
 
+function anomsa(m::MExtreme, evst, indices)
+    MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventsHW) : (MCWrapper, EventsCS)
+    mst, mse = evst
+    lm::TI = size(m.temp, 1)
+    mt::TI = 6
+    outemp, outhsh, outcat = ntuple(_ -> Vector{T}(undef, lm), 3)
+    onsan, decan, means, cums, maxes, durs = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
+    # for (c, cst, cse) in zip(cols, mst, mse)
+        for (d, (st, se)) in enumerate(zip(mst, mse))
+            atod = _anomsa2(MW, m.temp, m.clim, m.thresh, st, se, lm)
+            outemp[st:se] = atod.anom
+            outhsh[st:se] = atod.threshanom
+            outcat[st:se] .= categorys(atod)
+            onsan[c][d] = _onset(atod, st)
+            decan[c][d] = _decline(atod, se, lm)
+            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)# vars[c][d]
+        end
+    # end
+    # for bl in (outemp, outhsh, outcat)
+    #     bl[nCIx, :] .= NaN
+    # end
+    # if using mutable struct, we can also wrap outemp, outhsh, outcat
+    return outemp, outhsh, outcat, Ev(onsan, decan, means, cums, maxes, durs)
+end
+
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
 
 categorys(a::MWrapper) =  _categorys(a.anom, a.threshanom)
@@ -363,12 +432,31 @@ function meanmetrics3(ev::Events, indices, mdate)
         setindex!(outmean[idx], CIx, mean.(ev.fm))
     end
     E = ev.dtype
-    outmean[6][CIx] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
-
-    # NOTE: list comprehension maybe inline? instead of acting on ev directly 1. [mhcsminimax(mx) for mx in ev.maxes] if mx is a wrapped type
-    # 2. mhcsminimax(ev.maxes) where ev.maxes is also a wrapped type taking vector{T} or V{V{T}}. In this case, no distinction of Events, i.e. one type.
+    outmean[6][CIx] = mhcsminimax(E(ev.minimaxes)) 
     outmean[7][CIx] = @. length(ev.durs) / lfy # frequency
     outmean[z][CIx] = @. sum(ev.durs) / lfy #days
+    outmean
+end
+
+function meanmetrics3(ev::Events, indices, mdate)
+    # CIx, nCIx, x, y = indices
+    # VEctor version
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    outmean = Vector{T}(undef, z) 
+    # for i in eachindex(outmean)
+    #     outmean[i][nCIx] .= T(NaN)
+    # end
+    # check the metrics dictionary to ensure order of variables
+    for fm in (:means, :sums, :onset, :decline, :duration)
+        idx = metrics[fm]
+        outmean[idx]  = mean(ev.$fm)
+        setindex!(outmean[idx], mean(ev.$fm))
+    end
+    E = ev.dtype
+    outmean[6] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
+    outmean[7] = length(ev.durs) / lfy # frequency
+    outmean[z] = sum(ev.durs) / lfy #days
     outmean
 end
 
