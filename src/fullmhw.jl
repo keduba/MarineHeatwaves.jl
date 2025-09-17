@@ -475,7 +475,7 @@ function anumets4(ev::Events, indices, mdate, evst)
     for i in eachindex(outannual)
         outannual[i][nCIx, :] .= T(NaN)
     end
-    for j in eachindex(outannual)# To remove this outer loop
+    # for j in eachindex(outannual)# To remove this outer loop
         for (h, cx, mz, my, mt, me) in zip(cols, CIx, mapcste, mapyr, mapyst, mapyse)
             for (i, yr) in zip(mz, my)
                 yx = findall(yr .== mt) 
@@ -505,7 +505,39 @@ function anumets4(ev::Events, indices, mdate, evst)
                 # end
             end
         end
-    end
+    # end
+    outannual
+end
+
+
+# vector version
+function anumets4(ev::Events, indices, mdate, evst)
+    cst, cse = evst
+    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
+    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
+    mapyst = map(x -> year.(mdate[x]), cst)
+    mapyse = map(x -> year.(mdate[x]), cse)
+    lfy = (length ∘ unique)(year.(mdate))
+    z =  length(metrics)
+    E = ev.dtype
+    outannual = ntuple(_ -> Vector{T}(undef, lfy), z)
+        for (mz, my, mt, me) in zip(mapcste, mapyr, mapyst, mapyse)
+            for (i, yr) in zip(mz, my)
+                yx = findall(yr .== mt) 
+                if isempty(yx) 
+                    yx = findall(yr .== me)
+                end
+                # NOTE: Added
+                for fm in (:means, :sums, :onset, :decline, :duration)
+                    idx = metrics[fm]
+                    # outmean[idx][CIx]  = mean.(ev.fm)
+                    setindex!(outannual[idx], i, mean(ev.fm[yx]))
+                end
+                setindex!(outannual[6], i, mhcsminimax(E(ev.minimaxes[yx])))
+                setindex!(outannual[7], i, convert(T, length(yx)))
+                setindex!(outannual[z], i, length(ev.durations[yx])) 
+            end
+        end
     outannual
 end
 
@@ -528,6 +560,28 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices)
             # outcoeff[i][ci] = getindex(outlg, 2)
             # outrsqd[i][ci] = getindex(outlg, 3)
         end
+    end
+    outpvalue, outcoeff, outrsqd
+end
+
+# Vectorversion Output: each metric is a tuple of vectors
+function trend(outannual::NTuple{N, Vector{T}}, indices)
+    # CIx, nCIx, x, y = indices
+    X = 1:size(first(outannual), 1)
+    z = 8 # no of metrics length(outannual)
+    outpvalue = Vector{T}(undef, z)
+    outcoeff = Vector{T}(undef, z)
+    outrsqd = Vector{T}(undef, z)
+    for i in 1:z
+        # for ci in CIx
+            outcoeff[i],
+            outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
+            # V2 if linreg returns without pvalues
+            # outlg = linreg(X, outannual[i])
+            # outpvalue[i] = _pvalue(outlg)
+            # outcoeff[i] = getindex(outlg, 2)
+            # outrsqd[i] = getindex(outlg, 3)
+        # end
     end
     outpvalue, outcoeff, outrsqd
 end
