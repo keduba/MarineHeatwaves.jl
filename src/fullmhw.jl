@@ -1,5 +1,5 @@
 
-import Statistics : mean, quantile, std
+import Statistics: mean, quantile, std
 import Distributions: cdf, FDist, TDist
 using Dates
 using NCDatasets
@@ -20,6 +20,7 @@ const metrics = Dict(:means => 1,
 abstract type MExtreme end
 abstract type MWrapper end
 abstract type MEvents end
+# abstract type MExtreme{<: AbstractVecOrMat{T}} end
 
 struct MHWrapper{T} <: MWrapper 
     anom::Array{T}
@@ -35,16 +36,17 @@ struct MCWrapper{T} <: MWrapper
     decline::T
 end
 
-struct EventsHW{T} <: MEvents
+struct Events{T} <: MEvents
     means::Array{T, 1}
     minimaxes::Array{T, 1}
     onset::Array{T, 1}
     decline::Array{T, 1}
     duration::Array{T, 1}
     sums::Array{T, 1}
-    EventHW::DataType
+    dtype::DataType
 end
 
+# FIX: to remove
 struct EventsCS{T} <: MEvents
     means::Array{T, 1}
     minimaxes::Array{T, 1}
@@ -52,7 +54,7 @@ struct EventsCS{T} <: MEvents
     decline::Array{T, 1}
     duration::Array{T, 1}
     sums::Array{T, 1}
-    dtype::EventCS
+    dtype::DataType
 end
 
 struct EventHW{T} <: MEvents
@@ -67,19 +69,19 @@ struct MCS{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
     temp::T
     clim::T
     thresh::T
-    exceeds::Array{Bool}
+    exceeds::BitArray
 end
 
 struct MHW{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
     temp::T
     clim::T
     thresh::T
-    exceeds::Array{Bool}
+    exceeds::BitArray
 end
 
 function MHW(temp, clim, thresh)
     exc = _excess(temp, thresh)
-    MHW{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc)
+    MHW(temp, clim, thresh, exc)
 end
 
 function MCS(temp, clim, thresh)
@@ -131,7 +133,7 @@ function mhcsminimax(x::EventCS{Vector{Vector{T}}})
     return @inbounds [minimum(ia) for ia in x.maxes]
 end
 
-function timeindices(sstdate::Date, evtdate::Date)
+function timeindices(sstdate::StepRange{Date, Day}, evtdate::StepRange{Date, Day})
     si::TI = findfirst(isequal(first(evtdate)), sstdate)
     ei::TI = findfirst(isequal(last(evtdate)), sstdate)
     return range(si, ei)
@@ -139,7 +141,7 @@ end
 
 seamask(sst::AbstractArray, dims) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
 
-function _subtemp(sst::AbstractArray, mhwix::Range, clmix::Range)
+function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     N = ndims(sst)
     N ≤ 0 && error("0-dimensional data just can't work.")
 
@@ -165,8 +167,14 @@ function _subtemp(sst::AbstractArray, mhwix::Range, clmix::Range)
     end
 end
 
-MarineHW(args...)::MHW = MHW(subtemp(args...)...)
-MarineCS(args...)::MCS = MCS(subtemp(args...)...)
+# FIX: Wrapper for event
+# 1. Base entry function that allows to select if it's mhw or mcs
+# 2. From this entry point, I return the appropriate wrapper for the event
+# 3. This should allow me to return the indices and the wrapper
+#
+# Works for MarineHW tested. okay.
+MarineHW(args) = MHW(subtemp(args...)...)
+MarineCS(args)::MCS = MCS(subtemp(args...)...)
 
 leapyearday(mts::Date)::TI = dayofyear(mts) > 59 && !isleapyear(mts) ? dayofyear(mts) + 1 : dayofyear(mts)
 
@@ -174,13 +182,18 @@ _excess(tp, th) = tp .> th
 
 excess(ms::MExtreme) = ms.exceeds
 
-function subtemp(sst, sstdate::Date, mhwdate::Date, clmdate::Date)
+# TODO: Return the indices please
+
+function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; window=5, smoothwindow=31, threshold=0.9)
+    window::TI = convert(TI, window)
+    smoothwindow = convert(TI, smoothwindow)
+    threshold = convert(T, threshold)
     mhwix = timeindices(sstdate, mhwdate)
     clmix = timeindices(sstdate, clmdate)
     mlyd = leapyearday.(sstdate[mhwix])
     clyd = leapyearday.(sstdate[clmix])
     mhtemp, ctemp, CIs = _subtemp(sst, mhwix, clmix)
-    clima, thresh = climthresh(cltemp, clyd, mlyd, window, smoothwindow, threshold)
+    clima, thresh = climthresh(ctemp, clyd, mlyd, window, smoothwindow, threshold)
 
     return mhtemp, clima, thresh
 end
@@ -353,8 +366,8 @@ function _decline2(atod::MWrapper, mse, lnx)
     mse < lnx ? /(lnmx, (wsnx + 0.5)) : ngx == lnx ? snmx : /(snmx, wsnx)
 end
 
-function anomsa(m::MExtreme, evst, indices)
-    MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventsHW) : (MCWrapper, EventsCS)
+function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{T}
+    MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
     lm::TI = size(m.temp, 1)
@@ -363,7 +376,7 @@ function anomsa(m::MExtreme, evst, indices)
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
-            atod = _anomsa2(MW, m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
+            atod = _anomsa(MW, m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             outcat[CIx[c], st:se] .= categorys(atod)
@@ -376,11 +389,11 @@ function anomsa(m::MExtreme, evst, indices)
         bl[nCIx, :] .= NaN
     end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Ev(onsan, decan, means, cums, maxes, durs)
+    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, Ev)
 end
 
 function anomsa(m::MExtreme, evst, indices)
-    MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventsHW) : (MCWrapper, EventsCS)
+    MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     mst, mse = evst
     lm::TI = size(m.temp, 1)
     mt::TI = 6
@@ -388,7 +401,7 @@ function anomsa(m::MExtreme, evst, indices)
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
     # for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(mst, mse))
-            atod = _anomsa2(MW, m.temp, m.clim, m.thresh, st, se, lm)
+            atod = _anomsa(MW, m.temp, m.clim, m.thresh, st, se, lm)
             outemp[st:se] = atod.anom
             outhsh[st:se] = atod.threshanom
             outcat[st:se] .= categorys(atod)
@@ -401,7 +414,7 @@ function anomsa(m::MExtreme, evst, indices)
     #     bl[nCIx, :] .= NaN
     # end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Ev(onsan, decan, means, cums, maxes, durs)
+    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, Ev)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
@@ -417,7 +430,7 @@ function _events(anom::MWrapper)
     return means, cums, maxes, durs
 end
 
-function meanmetrics3(ev::Events, indices, mdate)
+function meanmetrics3(ev::MEvents, indices, mdate)
     CIx, nCIx, x, y = indices
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
@@ -438,7 +451,7 @@ function meanmetrics3(ev::Events, indices, mdate)
     outmean
 end
 
-function meanmetrics3(ev::Events, indices, mdate)
+function meanmetrics3(ev::MEvents, indices, mdate)
     # CIx, nCIx, x, y = indices
     # VEctor version
     lfy = (length ∘ unique)(year.(mdate))
@@ -460,7 +473,7 @@ function meanmetrics3(ev::Events, indices, mdate)
     outmean
 end
 
-function anumets4(ev::Events, indices, mdate, evst)
+function anumets4(ev::MEvents, indices, mdate, evst)
     cst, cse, cols = evst
     # f = isa(EventsHW, ev) ? maximum : minimum 
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
@@ -511,7 +524,7 @@ end
 
 
 # vector version
-function anumets4(ev::Events, indices, mdate, evst)
+function anumets4(ev::MEvents, indices, mdate, evst)
     cst, cse = evst
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
@@ -543,7 +556,7 @@ end
 
 # Input: outannual is a tuple of 3-D arrays
 # Output: each metric is a tuple of Matrices
-function trend(outannual::NTuple{N, Array{T, 3}}, indices)
+function trend(outannual::NTuple{8, Array{T, 3}}, indices)
     CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
     z = 8 # no of metrics length(outannual)
@@ -565,7 +578,7 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices)
 end
 
 # Vectorversion Output: each metric is a tuple of vectors
-function trend(outannual::NTuple{N, Vector{T}}, indices)
+function trend(outannual::NTuple{8, Vector{T}}, indices)
     # CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 1)
     z = 8 # no of metrics length(outannual)
