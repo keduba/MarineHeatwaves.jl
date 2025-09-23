@@ -23,15 +23,15 @@ abstract type MEvents end
 # abstract type MExtreme{<: AbstractVecOrMat{T}} end
 
 struct MHWrapper{T} <: MWrapper 
-    anom::Array{T}
-    threshanom::Array{T}
+    anom::Vector{T}
+    threshanom::Vector{T}
     onset::T
     decline::T
 end
 
 struct MCWrapper{T} <: MWrapper 
-    anom::Array{T}
-    threshanom::Array{T}
+    anom::Vector{T}
+    threshanom::Vector{T}
     onset::T
     decline::T
 end
@@ -70,6 +70,8 @@ struct MCS{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
     clim::T
     thresh::T
     exceeds::BitArray
+    wdtype::DataType
+    edtype::DataType
 end
 
 struct MHW{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
@@ -77,16 +79,18 @@ struct MHW{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
     clim::T
     thresh::T
     exceeds::BitArray
+    wdtype::DataType
+    edtype::DataType
 end
 
 function MHW(temp, clim, thresh)
     exc = _excess(temp, thresh)
-    MHW(temp, clim, thresh, exc)
+    MHW(temp, clim, thresh, exc, MHWrapper, EventHW)
 end
 
 function MCS(temp, clim, thresh)
     exc = _excess(thresh, temp)
-    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc)
+    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, MCWrapper, EventCS)
 end
 
 struct MHWCSO{T<:AbstractVecOrMat{<:AbstractFloat}}
@@ -173,8 +177,8 @@ end
 # 3. This should allow me to return the indices and the wrapper
 #
 # Works for MarineHW tested. okay.
-MarineHW(args) = MHW(subtemp(args...)...)
-MarineCS(args)::MCS = MCS(subtemp(args...)...)
+# MarineHW(args) = MHW(subtemp(args...)...)
+# MarineCS(args)::MCS = MCS(subtemp(args...)...)
 
 leapyearday(mts::Date)::TI = dayofyear(mts) > 59 && !isleapyear(mts) ? dayofyear(mts) + 1 : dayofyear(mts)
 
@@ -182,20 +186,22 @@ _excess(tp, th) = tp .> th
 
 excess(ms::MExtreme) = ms.exceeds
 
-# TODO: Return the indices please
+const events = Dict(:mhw => (MHW, 0.9),
+                    :mcs => (MCS, 0.1))
 
-function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; window=5, smoothwindow=31, threshold=0.9)
+# TODO: this object returns the clim and thresh by returning a MHW or MCS object so should reflect the name
+function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
     window::TI = convert(TI, window)
     smoothwindow = convert(TI, smoothwindow)
-    threshold = convert(T, threshold)
+    ME, mthreshold = events[event]
+    threshold::T = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
     mhwix = timeindices(sstdate, mhwdate)
     clmix = timeindices(sstdate, clmdate)
     mlyd = leapyearday.(sstdate[mhwix])
     clyd = leapyearday.(sstdate[clmix])
     mhtemp, ctemp, CIs = _subtemp(sst, mhwix, clmix)
     clima, thresh = climthresh(ctemp, clyd, mlyd, window, smoothwindow, threshold)
-
-    return mhtemp, clima, thresh
+    return ME(mhtemp, clima, thresh), CIs
 end
 
 function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T) # wrap?
@@ -367,7 +373,7 @@ function _decline2(atod::MWrapper, mse, lnx)
 end
 
 function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{T}
-    MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
+    # MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
     lm::TI = size(m.temp, 1)
@@ -376,7 +382,7 @@ function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
-            atod = _anomsa(MW, m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
+            atod = _anomsa(m.wdtype, m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             outcat[CIx[c], st:se] .= categorys(atod)
@@ -389,11 +395,11 @@ function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{
         bl[nCIx, :] .= NaN
     end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, Ev)
+    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, m.edtype)
 end
 
 function anomsa(m::MExtreme, evst, indices)
-    MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
+    # MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     mst, mse = evst
     lm::TI = size(m.temp, 1)
     mt::TI = 6
@@ -401,7 +407,7 @@ function anomsa(m::MExtreme, evst, indices)
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
     # for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(mst, mse))
-            atod = _anomsa(MW, m.temp, m.clim, m.thresh, st, se, lm)
+            atod = _anomsa(m.wdtype, m.temp, m.clim, m.thresh, st, se, lm)
             outemp[st:se] = atod.anom
             outhsh[st:se] = atod.threshanom
             outcat[st:se] .= categorys(atod)
@@ -414,7 +420,7 @@ function anomsa(m::MExtreme, evst, indices)
     #     bl[nCIx, :] .= NaN
     # end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, Ev)
+    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, m.edtype)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
