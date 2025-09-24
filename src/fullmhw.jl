@@ -353,7 +353,7 @@ function _anomsa(M::DataType, sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, 
     return M(ant, tht, ont, dnt)
 end
 
-function _onset2(atod::MWrapper, mst)
+function _onset(atod::MWrapper, mst)
     fan = first(atod) 
     nmx = mhcsminimax(atod) 
     ngx = mhcsarg(atod) 
@@ -362,7 +362,7 @@ function _onset2(atod::MWrapper, mst)
     mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
 end
 
-function _decline2(atod::MWrapper, mse, lnx) 
+function _decline(atod::MWrapper, mse, lnx)
     lan = last(atod)
     nmx = mhcsminimax(atod) 
     ngx = mhcsarg(atod) 
