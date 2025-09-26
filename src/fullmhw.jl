@@ -19,18 +19,18 @@ const metrics = Dict(:means => 1,
 
 # abstract type MExtreme end
 abstract type MWrapper end
-abstract type MEvents{TD<:AbstractVector} end #<:AbstractFloat}} end
+abstract type MEvents{TD} end 
 abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end # MCS/mhw
 
 
-struct MCWrapper{T}
+struct MCWrapper{T} <: MWrapper
     anom::Vector{T}
     threshanom::Vector{T}
     onset::T
     decline::T
 end
 
-struct MHWrapper{T}
+struct MHWrapper{T} <: MWrapper
     anom::Vector{T}
     threshanom::Vector{T}
     onset::T
@@ -44,7 +44,7 @@ struct Events{TE} <: MEvents{TE}
     decline::TE
     duration::TE
     sums::TE
-    dtype::DataType
+    dtype::Type{<:MEvents}
 end
 
 # # FIX: to remove
@@ -371,23 +371,23 @@ function _anomsa(sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::T
     return ant, tht, ont, dnt
 end
 
-function anomsa(m::MHW{Matrix{T}}, c, args...) 
-    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], args...)
+function anomsa(m::MHW{Matrix{T}}, c, st, en, ls) 
+    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, en, ls)
     return MHWrapper(outs...)
 end
 
-function anomsa(m::MCS{Matrix{T}}, c, args...) 
-    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], args...)
+function anomsa(m::MCS{Matrix{T}}, c, st, en, ls) 
+    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, en, ls)
     return MCWrapper(outs...)
 end
 
-function anomsa(m::MCS{Vector{T}}, args...) 
-    outs = _anomsa(m.temp, m.clim, m.thresh, args...)
+function anomsa(m::MCS{Vector{T}}, st, en, ls) 
+    outs = _anomsa(m.temp, m.clim, m.thresh, st, en, ls)
     return MCWrapper(outs...)
 end
 
-function anomsa(m::MHW{Vector{T}}, args...) 
-    outs = _anomsa(m.temp, m.clim, m.thresh, args...)
+function anomsa(m::MHW{Vector{T}}, st, en, ls) 
+    outs = _anomsa(m.temp, m.clim, m.thresh, st, en, ls)
     return MHWrapper(outs...)
 end
 
@@ -410,7 +410,7 @@ function _decline(atod::MWrapper, mse, lnx)
     mse < lnx ? /(lnmx, (wsnx + 0.5)) : ngx == lnx ? snmx : /(snmx, wsnx)
 end
 
-function anomsa(m::MExtreme{Matrix{T}}, evst, indices) where M<:AbstractMatrix{T}
+function anomsa(m::MExtreme{Matrix{T}}, evst, indices) 
     # MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
@@ -437,7 +437,7 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices) where M<:AbstractMatrix{T
     return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, m.edtype)
 end
 
-function anomsa(m::MExtreme, evst, indices)
+function anomsa(m::MExtreme{Vector{T}}, evst, indices)
     # MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     mst, mse = evst
     lm::TI = size(m.temp, 1)
@@ -475,7 +475,7 @@ function _events(anom::MWrapper)
     return means, cums, maxes, durs
 end
 
-function meanmetrics3(ev::MEvents, indices, mdate)
+function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     CIx, nCIx, x, y = indices
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
@@ -486,19 +486,19 @@ function meanmetrics3(ev::MEvents, indices, mdate)
     # check the metrics dictionary to ensure order of variables
     for fm in (:means, :sums, :onset, :decline, :duration)
         idx = metrics[fm]
-        outmean[idx][CIx]  = mean.(ev.fm)
-        setindex!(outmean[idx], CIx, mean.(ev.fm))
+        outmean[idx][CIx]  = mean.(getfield(ev, fm))
+        # setindex!(outmean[idx], mean.(getfield(ev, fm)), CIx)
     end
     E = ev.dtype
     # em = ev.dtype{Vector{T}}(ev.minimaxes)
     # outmean[6][CIx] = mhcsminimax(em)
     outmean[6][CIx] = mhcsminimax(E(ev.minimaxes)) 
-    outmean[7][CIx] = @. length(ev.durs) / lfy # frequency
-    outmean[z][CIx] = @. sum(ev.durs) / lfy #days
+    outmean[7][CIx] = @. length(ev.duration) / lfy # frequency
+    outmean[z][CIx] = @. sum(ev.duration) / lfy #days
     outmean
 end
 
-function meanmetrics3(ev::MEvents, indices, mdate)
+function meanmetrics(ev::MEvents{Vector{T}}, indices, mdate)
     # CIx, nCIx, x, y = indices
     # VEctor version
     lfy = (length ∘ unique)(year.(mdate))
@@ -510,17 +510,17 @@ function meanmetrics3(ev::MEvents, indices, mdate)
     # check the metrics dictionary to ensure order of variables
     for fm in (:means, :sums, :onset, :decline, :duration)
         idx = metrics[fm]
-        outmean[idx]  = mean(ev.$fm)
-        setindex!(outmean[idx], mean(ev.$fm))
+        outmean[idx]  = mean(getfield(ev, fm))
+        # setindex!(outmean, mean(getfield(ev, fm),idx)
     end
     E = ev.dtype
     outmean[6] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
-    outmean[7] = length(ev.durs) / lfy # frequency
-    outmean[z] = sum(ev.durs) / lfy #days
+    outmean[7] = length(ev.duration) / lfy # frequency
+    outmean[z] = sum(ev.duration) / lfy #days
     outmean
 end
 
-function anumets4(ev::MEvents, indices, mdate, evst)
+function anumets(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
     cst, cse, cols = evst
     # f = isa(EventsHW, ev) ? maximum : minimum 
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
@@ -545,12 +545,15 @@ function anumets4(ev::MEvents, indices, mdate, evst)
                 # NOTE: Added
                 for fm in (:means, :sums, :onset, :decline, :duration)
                     idx = metrics[fm]
-                    # outmean[idx][CIx]  = mean.(ev.fm)
-                    setindex!(outannual[idx], cx, i, mean(ev.fm[h][yx]))
+                outannual[idx][cx, i]  = mean(getfield(ev, fm)[h][yx])
+                    # setindex!(outannual[idx], cx, i, mean(getfield(ev, fm)[h][yx]))
                 end
-                setindex!(outannual[6], cx, i, mhcsminimax(E(ev.minimaxes[h][yx])))
-                setindex!(outannual[7], cx, i, convert(T, length(yx)))
-                setindex!(outannual[z], cx, i, length(ev.durations[h][yx])) 
+                outannual[6][cx, i]  = mhcsminimax(E(ev.minimaxes[h][yx]))
+                # setindex!(outannual[6], cx, i, mhcsminimax(E(ev.minimaxes[h][yx])))
+                outannual[7][cx, i]  = convert(T, length(yx))
+                # setindex!(outannual[7], cx, i, convert(T, length(yx)))
+                outannual[8][cx, i]  = convert(T, length(ev.duration[h][yx]))
+                # setindex!(outannual[z], cx, i, length(ev.durations[h][yx])) 
                 # if j == 6 
                 #     # TODO: Fix mini-maximum and type passed to allow indexing
                 #     # create a wrapper that's a type of array
@@ -571,7 +574,7 @@ end
 
 
 # vector version
-function anumets4(ev::MEvents, indices, mdate, evst)
+function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
     cst, cse = evst
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
@@ -595,7 +598,7 @@ function anumets4(ev::MEvents, indices, mdate, evst)
                 end
                 setindex!(outannual[6], i, mhcsminimax(E(ev.minimaxes[yx])))
                 setindex!(outannual[7], i, convert(T, length(yx)))
-                setindex!(outannual[z], i, length(ev.durations[yx])) 
+                setindex!(outannual[z], i, length(ev.duration[yx])) 
             end
         end
     outannual
@@ -644,6 +647,57 @@ function trend(outannual::NTuple{8, Vector{T}}, indices)
         # end
     end
     outpvalue, outcoeff, outrsqd
+end
+
+
+function linreg(x::AbstractVector, y::AbstractVector)
+
+    # remove NaNs
+    ind = .!isnan.(x) .& .!isnan.(y)
+    x = x[ind]
+    y = y[ind]
+
+    xm = mean(x)
+    xa = x .- xm
+    ym = mean(y)
+    ya = y .- ym
+
+    ssxy = xa' * ya
+    ssxx = xa' * xa
+    ssyy = ya' * ya
+
+    b = ssxy / ssxx
+    a = ym - b * xm
+    r2 = ssxy^2 / (ssxx * ssyy)
+
+    n = length(x)
+
+    sigma_e = sqrt(max((ssyy - b^2 * ssxx) / (n - 2), 0))
+    sigma_a = sigma_e * sqrt(sum(x .^ 2) / (n * ssxx))
+    sigma_b = sigma_e / sqrt(ssxx)
+
+
+    # Calculate the F-statistic
+    f_stat_a = (ssxy^2 / ssxx) / (ssyy - ssxy^2 / ssxx) * (n - 2)
+
+    # Calculate the p-value for the F-statistic
+    p_value_fa = 1 - cdf(FDist(1, n - 2), f_stat_a)
+
+    # Calculate the t-statistic for the slope (b)
+    t_stat_b = b / sigma_b
+
+    # Calculate the p-value for the t-statistic
+    p_value_ta = 2 * (1 - cdf(TDist(n - 2), abs(t_stat_b)))
+
+    # Calculate T-Distribution p-value
+    t_stat = b / sigma_b
+    p_value_tb = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
+
+    # Calculate F-Distribution p-value
+    f_stat_b = r2 / (1 - r2) * (n - 2) / 1
+    p_value_f = 1 - cdf(FDist(1, n - 2), f_stat_b)
+    return b, r2, p_value_fa, a, p_value_tb, sigma_a, sigma_b, sigma_e # NOTE: if returning directly into out{p,c,r}
+    # return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
 end
 
 ####
