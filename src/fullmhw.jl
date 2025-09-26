@@ -17,9 +17,9 @@ const metrics = Dict(:means => 1,
                      :onset => 7,
                      :decline => 8)
 
-abstract type MExtreme end
+# abstract type MExtreme end
 abstract type MWrapper end
-abstract type MEvents{TD<:AbstractVector{<:AbstractFloat}} end
+abstract type MEvents{TD<:AbstractVector} end #<:AbstractFloat}} end
 abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end # MCS/mhw
 
 
@@ -47,16 +47,16 @@ struct Events{TE} <: MEvents{TE}
     dtype::DataType
 end
 
-# FIX: to remove
-struct EventsCS{T} <: MEvents
-    means::Array{T, 1}
-    minimaxes::Array{T, 1}
-    onset::Array{T, 1}
-    decline::Array{T, 1}
-    duration::Array{T, 1}
-    sums::Array{T, 1}
-    dtype::DataType
-end
+# # FIX: to remove
+# struct EventsCS{T} <: MEvents
+#     means::Array{T, 1}
+#     minimaxes::Array{T, 1}
+#     onset::Array{T, 1}
+#     decline::Array{T, 1}
+#     duration::Array{T, 1}
+#     sums::Array{T, 1}
+#     dtype::DataType
+# end
 
 # struct Eventx{TA} <: MEv{TA}
 #     where TA <: AbstractVector
@@ -64,12 +64,12 @@ end
 # end
 
 struct EventHW{TA} <: MEvents{TA}
-    where TA <: AbstractVector
+    # where TA <: AbstractVector{T}
     maxes::TA
 end
 
 struct EventCS{TA} <: MEvents{TA}
-    where TA <: AbstractVector
+    # where TA <: AbstractVector{T}
     maxes::TA
 end
  
@@ -84,21 +84,21 @@ end
 # end
 
 struct MCS{TA,V} <: MExtreme{TA,V}
-    where TA <: AbstractVecOrMat
-    temp::TA{T}
-    clim::TA{T}
-    thresh::TA{T}
+    # where TA <: AbstractVecOrMat
+    temp::TA
+    clim::TA
+    thresh::TA
     exceeds::V
-    edtype::DataType
+    edtype::Type{EventCS}
 end
 
 struct MHW{TA, V} <: MExtreme{TA,V}
-    where TA <: AbstractVecOrMat
-    temp::TA{T}
-    clim::TA{T}
-    thresh::TA{T}
+    # where TA <: AbstractVecOrMat
+    temp::TA
+    clim::TA
+    thresh::TA
     exceeds::V
-    edtype::DataType
+    edtype::Type{EventHW}
 end
 
 function MHW(temp, clim, thresh)
@@ -303,7 +303,7 @@ function urange(clyd::Vector{TI}, win::TI)
     out
 end
 
-function _mylabel(ms::MExtreme, mindur::TI, maxgap::TI)
+function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     sty = excess(ms)
     stb = sparse(diff(sty, dims=1))
     cstt = Vector{Vector{TI}}(undef,  size(sty, 2))
@@ -336,7 +336,7 @@ function _mylabel(ms::MExtreme, mindur::TI, maxgap::TI)
     cstt, csee, cols
 end
 
-function _mylabel(ms::Union{MHW{Vector{T}}, MCS{Vector{T}}}, mindur, maxgap) 
+function _mylabel(ms::MExtreme{Vector{T}}, mindur, maxgap) 
     sty = excess(ms)
     stb = sparse(diff(sty))
     cst = TI[] 
@@ -410,7 +410,7 @@ function _decline(atod::MWrapper, mse, lnx)
     mse < lnx ? /(lnmx, (wsnx + 0.5)) : ngx == lnx ? snmx : /(snmx, wsnx)
 end
 
-function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{T}
+function anomsa(m::MExtreme{Matrix{T}}, evst, indices) where M<:AbstractMatrix{T}
     # MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
@@ -420,8 +420,8 @@ function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
-            # atod = anomsa(m, c, st, se, lm)
-            atod = _anomsa(m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
+            atod = anomsa(m, c, st, se, lm)
+            # atod = _anomsa(m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             outcat[CIx[c], st:se] .= categorys(atod)
