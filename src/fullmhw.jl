@@ -19,30 +19,31 @@ const metrics = Dict(:means => 1,
 
 abstract type MExtreme end
 abstract type MWrapper end
-abstract type MEvents end
-# abstract type MExtreme{<: AbstractVecOrMat{T}} end
+abstract type MEvents{TD<:AbstractVector{<:AbstractFloat}} end
+abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end # MCS/mhw
 
-struct MHWrapper{T} <: MWrapper 
+
+struct MCWrapper{T}
     anom::Vector{T}
     threshanom::Vector{T}
     onset::T
     decline::T
 end
 
-struct MCWrapper{T} <: MWrapper 
+struct MHWrapper{T}
     anom::Vector{T}
     threshanom::Vector{T}
     onset::T
     decline::T
 end
 
-struct Events{T} <: MEvents
-    means::Array{T, 1}
-    minimaxes::Array{T, 1}
-    onset::Array{T, 1}
-    decline::Array{T, 1}
-    duration::Array{T, 1}
-    sums::Array{T, 1}
+struct Events{TE} <: MEvents{TE}
+    means::TE
+    minimaxes::TE
+    onset::TE
+    decline::TE
+    duration::TE
+    sums::TE
     dtype::DataType
 end
 
@@ -57,40 +58,57 @@ struct EventsCS{T} <: MEvents
     dtype::DataType
 end
 
-struct EventHW{T} <: MEvents
-    maxes::Array{T, 1}
+# struct Eventx{TA} <: MEv{TA}
+#     where TA <: AbstractVector
+#     sy::TA{T}
+# end
+
+struct EventHW{TA} <: MEvents{TA}
+    where TA <: AbstractVector
+    maxes::TA
 end
 
-struct EventCS{T} <: MEvents
-    maxes::Array{T, 1}
+struct EventCS{TA} <: MEvents{TA}
+    where TA <: AbstractVector
+    maxes::TA
 end
+ 
+# takes care of mhw/mcs as sample
+# struct MHWn{TA,V} <: MHExt{TA,V}
+#     where TA <: AbstractVecOrMat
+#     temp::TA{T}
+#     clim::TA{T}
+#     thresh::TA{T}
+#     exceeds::V
+#     edtype::DataType
+# end
 
-struct MCS{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
-    temp::T
-    clim::T
-    thresh::T
-    exceeds::BitArray
-    wdtype::DataType
+struct MCS{TA,V} <: MExtreme{TA,V}
+    where TA <: AbstractVecOrMat
+    temp::TA{T}
+    clim::TA{T}
+    thresh::TA{T}
+    exceeds::V
     edtype::DataType
 end
 
-struct MHW{T<:AbstractVecOrMat{<:AbstractFloat}} <: MExtreme
-    temp::T
-    clim::T
-    thresh::T
-    exceeds::BitArray
-    wdtype::DataType
+struct MHW{TA, V} <: MExtreme{TA,V}
+    where TA <: AbstractVecOrMat
+    temp::TA{T}
+    clim::TA{T}
+    thresh::TA{T}
+    exceeds::V
     edtype::DataType
 end
 
 function MHW(temp, clim, thresh)
     exc = _excess(temp, thresh)
-    MHW(temp, clim, thresh, exc, MHWrapper, EventHW)
+    MHW(temp, clim, thresh, exc, EventHW)
 end
 
 function MCS(temp, clim, thresh)
     exc = _excess(thresh, temp)
-    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, MCWrapper, EventCS)
+    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
 struct MHWCSO{T<:AbstractVecOrMat{<:AbstractFloat}}
@@ -343,14 +361,34 @@ function _mylabel(ms::Union{MHW{Vector{T}}, MCS{Vector{T}}}, mindur, maxgap)
     stss, enss, 1
 end
 
-function _anomsa(M::DataType, sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::TI, lm::TI)
+function _anomsa(sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::TI, lm::TI)
     @views begin
     ant = sst[st:se] - clim[st:se]
     tht = thsh[st:se] - clim[st:se]
     ont = sst[max(1, st - 1)] - clim[max(1, st - 1)]
     dnt = sst[min(lm, se + 1)] - clim[min(lm, se + 1)]
     end
-    return M(ant, tht, ont, dnt)
+    return ant, tht, ont, dnt
+end
+
+function anomsa(m::MHW{Matrix{T}}, c, args...) 
+    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], args...)
+    return MHWrapper(outs...)
+end
+
+function anomsa(m::MCS{Matrix{T}}, c, args...) 
+    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], args...)
+    return MCWrapper(outs...)
+end
+
+function anomsa(m::MCS{Vector{T}}, args...) 
+    outs = _anomsa(m.temp, m.clim, m.thresh, args...)
+    return MCWrapper(outs...)
+end
+
+function anomsa(m::MHW{Vector{T}}, args...) 
+    outs = _anomsa(m.temp, m.clim, m.thresh, args...)
+    return MHWrapper(outs...)
 end
 
 function _onset(atod::MWrapper, mst)
@@ -382,7 +420,8 @@ function anomsa(m::Union{MHW{M},MCS{M}}, evst, indices) where M<:AbstractMatrix{
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
-            atod = _anomsa(m.wdtype, m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
+            # atod = anomsa(m, c, st, se, lm)
+            atod = _anomsa(m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             outcat[CIx[c], st:se] .= categorys(atod)
@@ -451,6 +490,8 @@ function meanmetrics3(ev::MEvents, indices, mdate)
         setindex!(outmean[idx], CIx, mean.(ev.fm))
     end
     E = ev.dtype
+    # em = ev.dtype{Vector{T}}(ev.minimaxes)
+    # outmean[6][CIx] = mhcsminimax(em)
     outmean[6][CIx] = mhcsminimax(E(ev.minimaxes)) 
     outmean[7][CIx] = @. length(ev.durs) / lfy # frequency
     outmean[z][CIx] = @. sum(ev.durs) / lfy #days
