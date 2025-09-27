@@ -695,6 +695,7 @@ function anumets3(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Matrix{T}
     end
     outannual
 end
+
 # vector version
 function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
     cst, cse = evst
@@ -760,9 +761,9 @@ function trend2(outannual::Vector{Vector{Vector{T}}})::NTuple{3, Vector{Vector{T
     outcoeff = [zeros(length(first(outannual))) for _ in 1:z]
     outrsqd = [zeros(length(first(outannual))) for _ in 1:z]
     for i in eachindex(outannual)
-        for ci in eachindex(outannual[i])
-            outcoeff[i],
-            outrsqd[i], outpvalue[i], = linreg(X, outannual[i][ci])
+        for ci in eachindex(outannual[1])
+            outcoeff[i][ci],
+            outrsqd[i][ci], outpvalue[i][ci], = linreg(X, outannual[i][ci])
             # V2 if linreg returns without pvalues
             # outlg = linreg(X, outannual[i][ci,:])
             # outpvalue[i][ci] = _pvalue(outlg)
