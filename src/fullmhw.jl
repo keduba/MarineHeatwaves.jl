@@ -731,7 +731,7 @@ end
 
 function mymetric(ev::MEvents)
     # Return a vector of vectors
-    [reduce(vcat, ev.t) for t in fieldnames(ev)]
+    [reduce(vcat, getfield(ev, t)) for t in propertynames(ev)]
 end
 
     # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
