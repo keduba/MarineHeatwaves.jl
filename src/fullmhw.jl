@@ -498,6 +498,63 @@ function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     outmean
 end
 
+function meanmetrics2(ev::MEvents{Vector{Vector{T}}}, mdate)::NTuple{8, Vector{T}}
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    outmean = ntuple(_ -> zeros(length(ev.means)), Val(z))
+    E = ev.dtype
+    for (fm, idx) in metrics 
+        if fm == :maxes
+            outmean[idx][:] = mhcsminimax(E(ev.minimaxes))
+        elseif fm == :frequency
+            outmean[idx][:] = @. length(ev.duration) / lfy 
+        elseif fm == :days
+            outmean[idx][:] = @. sum(ev.duration) / lfy
+        else
+            outmean[idx][:] = mean.(getfield(ev, fm))
+        end
+    end
+    outmean
+end
+
+function meanmetrics3(ev::MEvents{Vector{Vector{T}}}, mdate)::Vector{Vector{T}}
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    outmean = [zeros(length(ev.means)) for _ in 1:z]
+    E = ev.dtype
+    for (fm, idx) in metrics 
+        if fm == :maxes
+            outmean[idx] = mhcsminimax(E(ev.minimaxes))
+        elseif fm == :frequency
+            outmean[idx] = @. length(ev.duration) / lfy 
+        elseif fm == :days
+            outmean[idx] = @. sum(ev.duration) / lfy
+        else
+            outmean[idx]  = mean.(getfield(ev, fm))
+        end
+    end
+    outmean
+end
+
+function meanmetrics4(ev::MEvents{Vector{Vector{T}}}, mdate)::Matrix{T}
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    outmean = zeros(T, length(ev.means), z)
+    E = ev.dtype
+    for (fm, idx) in metrics 
+        if fm == :maxes
+            outmean[:, idx] = mhcsminimax(E(ev.minimaxes))
+        elseif fm == :frequency
+            outmean[:, idx] = @. length(ev.duration) / lfy 
+        elseif fm == :days
+            outmean[:, idx] = @. sum(ev.duration) / lfy
+        else
+            outmean[:, idx]  = mean.(getfield(ev, fm))
+        end
+    end
+    outmean
+end
+
 function meanmetrics(ev::MEvents{Vector{T}}, indices, mdate)
     # CIx, nCIx, x, y = indices
     # VEctor version
@@ -573,6 +630,71 @@ function anumets(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
 end
 
 
+function anumets2(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Vector{Vector{T}}}
+    cst, cse, cols = evst
+    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
+    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
+    mapyst = map(x -> year.(mdate[x]), cst)
+    mapyse = map(x -> year.(mdate[x]), cse)
+    lfy = (length ∘ unique)(year.(mdate))
+    z =  length(metrics)
+    E = ev.dtype
+    outannual = [[zeros(lfy) for _ in eachindex(cols)] for _ in 1:z]
+    for (fm, idx) in metrics
+        for (h, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
+            for (i, yr) in zip(mz, my)
+                yx = findall(yr .== mt) 
+                if isempty(yx) 
+                    yx = findall(yr .== me)
+                end
+                if fm == :maxes
+                    outannual[idx][h][i]  = mhcsminimax(E(getfield(ev, :minimaxes)[h][yx]))
+                elseif fm == :frequency
+                    outannual[idx][h][i]  = convert(T, length(yx))
+                elseif fm == :days
+                    outannual[idx][h][i]  = convert(T, length(ev.duration[h][yx]))
+                else
+                    outannual[idx][h][i]  = mean(getfield(ev, fm)[h][yx])
+                end
+            end
+        end
+    end
+    outannual
+end
+
+
+function anumets3(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Matrix{T}}
+    cst, cse, cols = evst
+    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
+    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
+    mapyst = map(x -> year.(mdate[x]), cst)
+    mapyse = map(x -> year.(mdate[x]), cse)
+    lfy = (length ∘ unique)(year.(mdate))
+    z =  length(metrics)
+    E = ev.dtype
+    # each column is a pixel, row is the year
+    outannual = [zeros(lfy, length(cols)) for _ in 1:length(metrics)]
+    for (fm, idx) in metrics
+        for (h, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
+            for (i, yr) in zip(mz, my)
+                yx = findall(yr .== mt) 
+                if isempty(yx) 
+                    yx = findall(yr .== me)
+                end
+                if fm == :maxes
+                    outannual[idx][i, h]  = mhcsminimax(E(getfield(ev, :minimaxes)[h][yx]))
+                elseif fm == :frequency
+                    outannual[idx][i, h]  = convert(T, length(yx))
+                elseif fm == :days
+                    outannual[idx][i, h]  = convert(T, length(ev.duration[h][yx]))
+                else
+                    outannual[idx][i, h]  = mean(getfield(ev, fm)[h][yx])
+                end
+            end
+        end
+    end
+    outannual
+end
 # vector version
 function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
     cst, cse = evst
@@ -609,7 +731,7 @@ end
 function trend(outannual::NTuple{8, Array{T, 3}}, indices)
     CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
-    z = 8 # no of metrics length(outannual)
+    z = length(outannual)
     outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
@@ -623,6 +745,57 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
             # outcoeff[i][ci] = getindex(outlg, 2)
             # outrsqd[i][ci] = getindex(outlg, 3)
         end
+        outcoeff[i][nCIx] .= T(NaN)
+        outpvalue[i][nCIx] .= T(NaN)
+        outrsqd[i][nCIx] .= T(NaN)
+    end
+    outpvalue, outcoeff, outrsqd
+end
+
+function trend2(outannual::Vector{Vector{Vector{T}}})::NTuple{3, Vector{Vector{T}}}
+    # CIx, nCIx, x, y = indices
+    X = 1:length(first(first(outannual))) # could be legnth of fullyear lfy
+    z = length(outannual)
+    outpvalue = [zeros(length(first(outannual))) for _ in 1:z]
+    outcoeff = [zeros(length(first(outannual))) for _ in 1:z]
+    outrsqd = [zeros(length(first(outannual))) for _ in 1:z]
+    for i in eachindex(outannual)
+        for ci in eachindex(outannual[i])
+            outcoeff[i],
+            outrsqd[i], outpvalue[i], = linreg(X, outannual[i][ci])
+            # V2 if linreg returns without pvalues
+            # outlg = linreg(X, outannual[i][ci,:])
+            # outpvalue[i][ci] = _pvalue(outlg)
+            # outcoeff[i][ci] = getindex(outlg, 2)
+            # outrsqd[i][ci] = getindex(outlg, 3)
+        end
+        # outcoeff[i][nCIx] .= T(NaN)
+        # outpvalue[i][nCIx] .= T(NaN)
+        # outrsqd[i][nCIx] .= T(NaN)
+    end
+    outpvalue, outcoeff, outrsqd
+end
+
+function trend3(outannual::Vector{Matrix{T}})::NTuple{3, Matrix{T}}
+    # CIx, nCIx, x, y = indices
+    X = 1:size(first(outannual), 1) # could be legnth of fullyear lfy
+    z = length(outannual)
+    outpvalue = zeros(T, size(first(outannual), 2), z)
+    outcoeff = zeros(T, size(first(outannual), 2), z)
+    outrsqd = zeros(T, size(first(outannual), 2), z)
+    for i in eachindex(outannual)
+        for ci in axes(outannual[1], 2)
+            outcoeff[ci, i],
+            outrsqd[ci, i], outpvalue[ci, i], = linreg(X, outannual[i][:, ci])
+            # V2 if linreg returns without pvalues
+            # outlg = linreg(X, outannual[i][ci,:])
+            # outpvalue[i][ci] = _pvalue(outlg)
+            # outcoeff[i][ci] = getindex(outlg, 2)
+            # outrsqd[i][ci] = getindex(outlg, 3)
+        end
+        # outcoeff[i][nCIx] .= T(NaN)
+        # outpvalue[i][nCIx] .= T(NaN)
+        # outrsqd[i][nCIx] .= T(NaN)
     end
     outpvalue, outcoeff, outrsqd
 end
@@ -631,7 +804,7 @@ end
 function trend(outannual::NTuple{8, Vector{T}}, indices)
     # CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 1)
-    z = 8 # no of metrics length(outannual)
+    z = length(outannual)
     outpvalue = Vector{T}(undef, z)
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
