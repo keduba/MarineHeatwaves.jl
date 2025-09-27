@@ -17,7 +17,6 @@ const metrics = Dict(:means => 1,
                      :onset => 7,
                      :decline => 8)
 
-# abstract type MExtreme end
 abstract type MWrapper end
 abstract type MEvents{TD} end 
 abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end # MCS/mhw
@@ -170,7 +169,7 @@ function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     xz = seamask(sst, N)
     !xz[1] && error("Please check your data. It appears to be all `NaN` or `missing`.")
 
-    if N > 1
+    if N == 3
         CIx = CartesianIndices(xz)[xz]
         @views begin
             msst = permutedims(sst[CIx, mhwix])
@@ -211,7 +210,8 @@ const events = Dict(:mhw => (MHW, 0.9),
 function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
     window::TI = convert(TI, window)
     smoothwindow = convert(TI, smoothwindow)
-    ME, mthreshold = events[event]
+    in(event, keys(events)) || error("$event is not a valid key. Try `:mhw` or `:mcs`")
+    ME, mthreshold = get(events, event, :mhw)
     threshold::T = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
     mhwix = timeindices(sstdate, mhwdate)
     clmix = timeindices(sstdate, clmdate)
@@ -303,6 +303,7 @@ function urange(clyd::Vector{TI}, win::TI)
     out
 end
 
+# TODO: remove the type signature from the mindur and maxgap. Enforce it inside if necessary.
 function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     sty = excess(ms)
     stb = sparse(diff(sty, dims=1))
@@ -316,7 +317,7 @@ function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
             if isequal(nonzeros(stb)[i], -1)
                 push!(cse, rowvals(stb)[i])
             else
-                push!(cst, rowvals(stb)[i])#+1)
+                push!(cst, rowvals(stb)[i]+1)
             end
         end
         first(sty[:, c]) ? pushfirst!(cst, 1) : nothing
@@ -434,7 +435,8 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
         bl[nCIx, :] .= NaN
     end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, m.edtype)
+    # TODO: Add category to the Events struct
+    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, m.edtype)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
@@ -905,17 +907,19 @@ end
 
 function mymetric(ev::MEvents)
     # Return a vector of vectors
-    [reduce(vcat, getfield(ev, t)) for t in propertynames(ev)]
+    vps = first(propertynames(ev), 6)
+    [reduce(vcat, getfield(ev, t)) for t in vps]
 end
 
     # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
  
 function mymetric(ev::MEvents, indices)
     # Return a the metrics as vector 
-    mymetric(ev)
+    ids = mymetric(ev)
     cix = getindex(indices, 1)
     # the number of events per pixel
-    drs = length.(ev.fieldnames(ev)[1])
+    # drs = length.(ev.fieldnames(ev)[1])
+    drs = length.(getfield(ev, 1))
     ix = TI[]
     iy = TI[]
     for (q, s) in zip(drs, cix)
@@ -923,6 +927,7 @@ function mymetric(ev::MEvents, indices)
         append!(iy, repeat([Tuple(s)[2]], q))
     end
     @assert length(ix) == length(iy) == sum(drs)
+    stack([ids..., ix, iy])
 end
 
 function mymetric(mm::MExtreme, indices, arg::Symbol=:anom)
