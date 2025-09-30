@@ -372,7 +372,6 @@ function _decline(atod::MWrapper, mse, lnx)
 end
 
 function anomsa(m::MExtreme{Matrix{T}}, evst, indices) 
-    # MW, Ev = typeof(m) == MHW{Matrix{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
     lm::TI = size(m.temp, 1)
@@ -382,46 +381,38 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
             atod = anomsa(m, c, st, se, lm)
-            # atod = _anomsa(m.temp[:, c], m.clim[:, c], m.thresh[:, c], st, se, lm)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             outcat[CIx[c], st:se] .= categorys(atod)
             onsan[c][d] = _onset(atod, st)
             decan[c][d] = _decline(atod, se, lm)
-            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)# vars[c][d]
+            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
         end
     end
     for bl in (outemp, outhsh, outcat)
         bl[nCIx, :] .= NaN
     end
-    # if using mutable struct, we can also wrap outemp, outhsh, outcat
     # TODO: Add category to the Events struct
     return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, m.edtype)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
-    # MW, Ev = typeof(m) == MHW{Vector{T}} ? (MHWrapper, EventHW) : (MCWrapper, EventCS)
     mst, mse = evst
     lm::TI = size(m.temp, 1)
     mt::TI = 6
     outemp, outhsh, outcat = ntuple(_ -> Vector{T}(undef, lm), 3)
     onsan, decan, means, cums, maxes, durs = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
-    # for (c, cst, cse) in zip(cols, mst, mse)
-        for (d, (st, se)) in enumerate(zip(mst, mse))
-            atod = _anomsa(m.wdtype, m.temp, m.clim, m.thresh, st, se, lm)
-            outemp[st:se] = atod.anom
-            outhsh[st:se] = atod.threshanom
-            outcat[st:se] .= categorys(atod)
-            onsan[c][d] = _onset(atod, st)
-            decan[c][d] = _decline(atod, se, lm)
-            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)# vars[c][d]
-        end
-    # end
-    # for bl in (outemp, outhsh, outcat)
-    #     bl[nCIx, :] .= NaN
-    # end
+    for (d, (st, se)) in enumerate(zip(mst, mse))
+        atod = _anomsa(m.wdtype, m.temp, m.clim, m.thresh, st, se, lm)
+        outemp[st:se] = atod.anom
+        outhsh[st:se] = atod.threshanom
+        outcat[st:se] .= categorys(atod)
+        onsan[c][d] = _onset(atod, st)
+        decan[c][d] = _decline(atod, se, lm)
+        means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
+    end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Events(onsan, decan, means, cums, maxes, durs, m.edtype)
+    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, m.edtype)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
@@ -449,14 +440,12 @@ function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     for fm in (:means, :sums, :onset, :decline, :duration)
         idx = metrics[fm]
         outmean[idx][CIx]  = mean.(getfield(ev, fm))
-        # setindex!(outmean[idx], mean.(getfield(ev, fm)), CIx)
     end
     E = ev.dtype
     # em = ev.dtype{Vector{T}}(ev.minimaxes)
-    # outmean[6][CIx] = mhcsminimax(em)
-    outmean[6][CIx] = mhcsminimax(E(ev.minimaxes)) 
-    outmean[7][CIx] = @. length(ev.duration) / lfy # frequency
-    outmean[z][CIx] = @. sum(ev.duration) / lfy #days
+    outmean[metrics[:maxes]][CIx] = mhcsminimax(E(ev.minimaxes)) 
+    outmean[metrics[:frequency]][CIx] = @. length(ev.duration) / lfy
+    outmean[metrics[:days]][CIx] = @. sum(ev.duration) / lfy 
     outmean
 end
 
@@ -523,25 +512,20 @@ function meanmetrics(ev::MEvents{Vector{T}}, indices, mdate)
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
     outmean = Vector{T}(undef, z) 
-    # for i in eachindex(outmean)
-    #     outmean[i][nCIx] .= T(NaN)
-    # end
     # check the metrics dictionary to ensure order of variables
     for fm in (:means, :sums, :onset, :decline, :duration)
         idx = metrics[fm]
         outmean[idx]  = mean(getfield(ev, fm))
-        # setindex!(outmean, mean(getfield(ev, fm),idx)
     end
     E = ev.dtype
-    outmean[6] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
-    outmean[7] = length(ev.duration) / lfy # frequency
-    outmean[z] = sum(ev.duration) / lfy #days
+    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
+    outmean[metrics[:frequency]] = length(ev.duration) / lfy # frequency
+    outmean[metrics[:days]] = sum(ev.duration) / lfy #days
     outmean
 end
 
 function anumets(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
     cst, cse, cols = evst
-    # f = isa(EventsHW, ev) ? maximum : minimum 
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
     mapyst = map(x -> year.(mdate[x]), cst)
@@ -554,7 +538,6 @@ function anumets(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
     for i in eachindex(outannual)
         outannual[i][nCIx, :] .= T(NaN)
     end
-    # for j in eachindex(outannual)# To remove this outer loop
         for (h, cx, mz, my, mt, me) in zip(cols, CIx, mapcste, mapyr, mapyst, mapyse)
             for (i, yr) in zip(mz, my)
                 yx = findall(yr .== mt) 
@@ -565,29 +548,12 @@ function anumets(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
                 for fm in (:means, :sums, :onset, :decline, :duration)
                     idx = metrics[fm]
                 outannual[idx][cx, i]  = mean(getfield(ev, fm)[h][yx])
-                    # setindex!(outannual[idx], cx, i, mean(getfield(ev, fm)[h][yx]))
                 end
-                outannual[6][cx, i]  = mhcsminimax(E(ev.minimaxes[h][yx]))
-                # setindex!(outannual[6], cx, i, mhcsminimax(E(ev.minimaxes[h][yx])))
-                outannual[7][cx, i]  = convert(T, length(yx))
-                # setindex!(outannual[7], cx, i, convert(T, length(yx)))
-                outannual[8][cx, i]  = convert(T, length(ev.duration[h][yx]))
-                # setindex!(outannual[z], cx, i, length(ev.durations[h][yx])) 
-                # if j == 6 
-                #     # TODO: Fix mini-maximum and type passed to allow indexing
-                #     # create a wrapper that's a type of array
-                #     # outannual[j][cx, i] = maximum(ev[j][h][yx]) # WARN: change maximum to minimax
-                #     outannual[j][cx, i] = f(ev.maxes[h][yx]) # WARN: change maximum to minimax
-                # elseif j == 7 # frequency maybe
-                #     outannual[j][cx, i] = convert(T, length(yx))
-                # elseif j == 8 # durations
-                #     outannual[j][cx, i] = length(ev.durations[h][yx])
-                # else
-                #     outannual[j][cx, i] = mean(ev[j][h][yx])
-                # end
+             outmean[metrics[:maxes]][cx, i] = mhcsminimax(E(ev.minimaxes[h][yx]))
+             outmean[metrics[:frequency][cx, ] = convert(T, length(yx))
+             outmean[metrics[:days]][cx, i] = convert(T, length(ev.duration[h][yx]))
             end
         end
-    # end
     outannual
 end
 
@@ -678,12 +644,11 @@ function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
                 # NOTE: Added
                 for fm in (:means, :sums, :onset, :decline, :duration)
                     idx = metrics[fm]
-                    # outmean[idx][CIx]  = mean.(ev.fm)
-                    setindex!(outannual[idx], i, mean(ev.fm[yx]))
+                    outannual[idx][i]  = mean(getfield(ev, fm)[yx])
                 end
-                setindex!(outannual[6], i, mhcsminimax(E(ev.minimaxes[yx])))
-                setindex!(outannual[7], i, convert(T, length(yx)))
-                setindex!(outannual[z], i, length(ev.duration[yx])) 
+                outannual[metrics[:maxes]][i] = mhcsminimax(E(getfield(ev, :minimaxes)[yx]))
+                outannual[metrics[:frequency]][i] = convert(T, length(yx))
+                outannual[metrics[:days]][i] = length(getfield(ev, :duration)[yx])
             end
         end
     outannual
@@ -832,6 +797,7 @@ function linreg(x::AbstractVector, y::AbstractVector)
     # Calculate F-Distribution p-value
     f_stat_b = r2 / (1 - r2) * (n - 2) / 1
     p_value_f = 1 - cdf(FDist(1, n - 2), f_stat_b)
+
     return b, r2, p_value_fa, a, p_value_tb, sigma_a, sigma_b, sigma_e # NOTE: if returning directly into out{p,c,r}
     # return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
 end
@@ -855,15 +821,14 @@ for (f, fn) in ((:pvalues, :outpvalue), (:coeffs, :outcoeff), (:rsquared, :outrs
 end
 
 function mymetric(ev::MEvents, metric)
-    fd = fieldnames(ev)
+    fd = first(propertynames(ev), 6)
     if metric in fd
-        return reduce(vcat, ev.$metric)
+        return reduce(vcat, getfield(ev, metric))
     else
-        throw(Keyerror(metric))
+        throw(KeyError(metric))
         @info "Perhaps you mean one of ", print(keys(metric))
     end
 end
-
 
 function mymetric(ev::MEvents)
     # Return a vector of vectors
@@ -878,7 +843,6 @@ function mymetric(ev::MEvents, indices)
     ids = mymetric(ev)
     cix = getindex(indices, 1)
     # the number of events per pixel
-    # drs = length.(ev.fieldnames(ev)[1])
     drs = length.(getfield(ev, 1))
     ix = TI[]
     iy = TI[]
