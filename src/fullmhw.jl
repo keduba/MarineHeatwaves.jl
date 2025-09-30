@@ -19,7 +19,7 @@ const metrics = Dict(:means => 1,
 
 abstract type MWrapper end
 abstract type MEvents{TD} end 
-abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end # MCS/mhw
+abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end 
 
 
 struct MCWrapper{T} <: MWrapper
@@ -46,44 +46,15 @@ struct Events{TE} <: MEvents{TE}
     dtype::Type{<:MEvents}
 end
 
-# # FIX: to remove
-# struct EventsCS{T} <: MEvents
-#     means::Array{T, 1}
-#     minimaxes::Array{T, 1}
-#     onset::Array{T, 1}
-#     decline::Array{T, 1}
-#     duration::Array{T, 1}
-#     sums::Array{T, 1}
-#     dtype::DataType
-# end
-
-# struct Eventx{TA} <: MEv{TA}
-#     where TA <: AbstractVector
-#     sy::TA{T}
-# end
-
 struct EventHW{TA} <: MEvents{TA}
-    # where TA <: AbstractVector{T}
     maxes::TA
 end
 
 struct EventCS{TA} <: MEvents{TA}
-    # where TA <: AbstractVector{T}
     maxes::TA
 end
- 
-# takes care of mhw/mcs as sample
-# struct MHWn{TA,V} <: MHExt{TA,V}
-#     where TA <: AbstractVecOrMat
-#     temp::TA{T}
-#     clim::TA{T}
-#     thresh::TA{T}
-#     exceeds::V
-#     edtype::DataType
-# end
 
 struct MCS{TA,V} <: MExtreme{TA,V}
-    # where TA <: AbstractVecOrMat
     temp::TA
     clim::TA
     thresh::TA
@@ -92,7 +63,6 @@ struct MCS{TA,V} <: MExtreme{TA,V}
 end
 
 struct MHW{TA, V} <: MExtreme{TA,V}
-    # where TA <: AbstractVecOrMat
     temp::TA
     clim::TA
     thresh::TA
@@ -142,7 +112,6 @@ mhcsminimax(a::MCWrapper) = minimum(a)
 mhcsarg(a::MHWrapper) = argmax(a)
 mhcsarg(a::MCWrapper) = argmin(a)
 
-# we expect Events to currently return Vector{Vector{T}} so the following function is targeting the field we want.
 mhcsminimax(x::EventHW{Vector{T}}) = maximum(x.maxes)
 mhcsminimax(x::EventCS{Vector{T}}) = minimum(x.maxes)
 
@@ -188,14 +157,6 @@ function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     end
 end
 
-# FIX: Wrapper for event
-# 1. Base entry function that allows to select if it's mhw or mcs
-# 2. From this entry point, I return the appropriate wrapper for the event
-# 3. This should allow me to return the indices and the wrapper
-#
-# Works for MarineHW tested. okay.
-# MarineHW(args) = MHW(subtemp(args...)...)
-# MarineCS(args)::MCS = MCS(subtemp(args...)...)
 
 leapyearday(mts::Date)::TI = dayofyear(mts) > 59 && !isleapyear(mts) ? dayofyear(mts) + 1 : dayofyear(mts)
 
@@ -223,7 +184,6 @@ function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange
 end
 
 function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T) # wrap?
-    # T =  eltype(cmst)
     clim = Matrix{T}(undef, length(mlyd), size(cmst, 2))
     thresh = similar(clim)
     uranges = urange(clyd, win)
@@ -244,9 +204,6 @@ function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold
 end
 
 function climthresh(cmst::Vector{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T)
-    # T =  eltype(cmst)
-    # clim = Vector{T}(undef, length(mlyd))
-    # thresh = similar(clim)
     uranges = urange(clyd, win)
     cv = Vector{T}(undef, 366)
     th = similar(cv)
