@@ -263,6 +263,9 @@ end
 # TODO: remove the type signature from the mindur and maxgap. Enforce it inside if necessary.
 function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     sty = excess(ms)
+    # this will be absorbed in an umbrella function that calls mylabel.
+    mindur::TI = convert(TI, mindur)
+    maxgap::TI = convert(TI, maxgap)
     stb = sparse(diff(sty, dims=1))
     cstt = Vector{Vector{TI}}(undef,  size(sty, 2))
     csee = Vector{Vector{TI}}(undef,  size(sty, 2))
@@ -294,7 +297,7 @@ function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     cstt, csee, cols
 end
 
-function _mylabel(ms::MExtreme{Vector{T}}, mindur, maxgap) 
+function _mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI) 
     sty = excess(ms)
     stb = sparse(diff(sty))
     cst = TI[] 
@@ -303,7 +306,7 @@ function _mylabel(ms::MExtreme{Vector{T}}, mindur, maxgap)
         if isequal(nonzeros(stb)[i], -1)
             push!(cse, rowvals(stb)[i])
         else
-            push!(cst, rowvals(stb)[i])
+            push!(cst, rowvals(stb)[i]+1)
         end
     end
     first(sty) ? pushfirst!(cst, 1) : nothing
