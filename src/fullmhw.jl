@@ -84,11 +84,13 @@ function MCS(temp, clim, thresh)
     MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
-struct MHWCSO{T<:AbstractVecOrMat{<:AbstractFloat}}
-    outtemp::T
-    outclim::T
-    outhresh::T
-    outexceeds::Array{Bool}
+struct MHWCSO{T<:AbstractArray{<:AbstractFloat}}
+    outtempanom::T
+    outcats::T
+    outthreshanom::T
+    # outclim::T
+    # outhresh::T
+    # outexceeds::Array{Bool}
     outmeans::T
     outannuals::T
     outpvalues::T
@@ -530,21 +532,18 @@ function meanmetrics(ev::MEvents{Vector{T}}, mdate)
     outmean[metrics[:days]] = sum(ev.duration) / lfy 
     outmean
 end
-function _yrdate(mdate::StepRange{Date}, evt)
-    
 
+function _yrdate(mdate::StepRange{Date}, evt)
     cst, cse, cols = evst
-    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
-    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
-    mapyst = map(x -> year.(mdate[x]), cst)
-mapyse = map(x -> year.(mdate[x]), cse)
+    mcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
+    myr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
+    myst = map(x -> year.(mdate[x]), cst)
+    myse = map(x -> year.(mdate[x]), cse)
+    return mcste, myr, myst, myse
 end
+
 function annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
-    cst, cse, cols = evst
-    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
-    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
-    mapyst = map(x -> year.(mdate[x]), cst)
-    mapyse = map(x -> year.(mdate[x]), cse)
+    mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     CIx, nCIx, x, y = indices
     z =  length(metrics)
@@ -559,7 +558,6 @@ function annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
                 if isempty(yx) 
                     yx = findall(yr .== me)
                 end
-                # NOTE: Added
                 for fm in (:means, :sums, :onset, :decline, :duration)
                     idx = metrics[fm]
                 outannual[idx][cx, i]  = mean(getfield(ev, fm)[h][yx])
@@ -574,11 +572,7 @@ end
 
 
 function anumets2(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Vector{Vector{T}}}
-    cst, cse, cols = evst
-    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
-    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
-    mapyst = map(x -> year.(mdate[x]), cst)
-    mapyse = map(x -> year.(mdate[x]), cse)
+    mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
     E = ev.dtype
@@ -607,11 +601,7 @@ end
 
 
 function anumets3(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Matrix{T}}
-    cst, cse, cols = evst
-    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
-    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
-    mapyst = map(x -> year.(mdate[x]), cst)
-    mapyse = map(x -> year.(mdate[x]), cse)
+    mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
     E = ev.dtype
@@ -641,11 +631,7 @@ end
 
 # vector version
 function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
-    cst, cse = evst
-    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
-    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
-    mapyst = map(x -> year.(mdate[x]), cst)
-    mapyse = map(x -> year.(mdate[x]), cse)
+    mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
     E = ev.dtype
@@ -696,7 +682,6 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
 end
 
 function trend2(outannual::Vector{Vector{Vector{T}}})::NTuple{3, Vector{Vector{T}}}
-    # CIx, nCIx, x, y = indices
     X = 1:length(first(first(outannual))) # could be legnth of fullyear lfy
     z = length(outannual)
     outpvalue = [zeros(length(first(outannual))) for _ in 1:z]
@@ -712,15 +697,11 @@ function trend2(outannual::Vector{Vector{Vector{T}}})::NTuple{3, Vector{Vector{T
             # outcoeff[i][ci] = getindex(outlg, 2)
             # outrsqd[i][ci] = getindex(outlg, 3)
         end
-        # outcoeff[i][nCIx] .= T(NaN)
-        # outpvalue[i][nCIx] .= T(NaN)
-        # outrsqd[i][nCIx] .= T(NaN)
     end
     outpvalue, outcoeff, outrsqd
 end
 
 function trend3(outannual::Vector{Matrix{T}})::NTuple{3, Matrix{T}}
-    # CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 1) # could be legnth of fullyear lfy
     z = length(outannual)
     outpvalue = zeros(T, size(first(outannual), 2), z)
@@ -736,9 +717,6 @@ function trend3(outannual::Vector{Matrix{T}})::NTuple{3, Matrix{T}}
             # outcoeff[i][ci] = getindex(outlg, 2)
             # outrsqd[i][ci] = getindex(outlg, 3)
         end
-        # outcoeff[i][nCIx] .= T(NaN)
-        # outpvalue[i][nCIx] .= T(NaN)
-        # outrsqd[i][nCIx] .= T(NaN)
     end
     outpvalue, outcoeff, outrsqd
 end
@@ -752,21 +730,20 @@ function trend(outannual::NTuple{8, Vector{T}}, indices)
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
     for i in 1:z
-        # for ci in CIx
-            outcoeff[i],
-            outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
-            # V2 if linreg returns without pvalues
-            # outlg = linreg(X, outannual[i])
-            # outpvalue[i] = _pvalue(outlg)
-            # outcoeff[i] = getindex(outlg, 2)
-            # outrsqd[i] = getindex(outlg, 3)
-        # end
+        outcoeff[i],
+        outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
+        # V2 if linreg returns without pvalues
+        # outlg = linreg(X, outannual[i])
+        # outpvalue[i] = _pvalue(outlg)
+        # outcoeff[i] = getindex(outlg, 2)
+        # outrsqd[i] = getindex(outlg, 3)
     end
     outpvalue, outcoeff, outrsqd
 end
 
 
 function linreg(x::AbstractVector, y::AbstractVector)
+    # Alexander Barth github.com/AlexanderBarth
 
     # remove NaNs
     ind = .!isnan.(x) .& .!isnan.(y)
@@ -847,14 +824,13 @@ end
 
 function mymetric(ev::MEvents)
     # Return a vector of vectors
-    vps = first(propertynames(ev), 6)
+    vps = first(propertynames(ev), 7)
     [reduce(vcat, getfield(ev, t)) for t in vps]
 end
 
     # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
  
 function mymetric(ev::MEvents, indices)
-    # Return a the metrics as vector 
     ids = mymetric(ev)
     cix = getindex(indices, 1)
     # the number of events per pixel
@@ -869,30 +845,16 @@ function mymetric(ev::MEvents, indices)
     stack([ids..., ix, iy])
 end
 
-function mymetric(mm::MExtreme, indices, arg::Symbol=:anom)
+function mymetric(mm::MExtreme, indices, arg::Symbol)
     # return clim, thresh or exceedance as 3-D arrays
-    # Matrix to Array conversion: require indices 
     # mapping the argument to the fieldnames of the mm
-    Dict(:anom => :anoma,
-         :thresh => :threshold,
-         :exceeds => :exceedance)
 
     arg in fieldnames(typeof(mm)) || throw(KeyError(arg))
     gh = getfield(mm, arg)
     return _outarrays(gh, indices)
 end
 
-function mymetric(mm::MHWCSO, arg::Symbol=:anom)
-    # return clim, thresh or exceedance as 3-D arrays
-    # Matrix to Array conversion: require indices 
-    # mapping the argument to the fieldnames of the mm
-    Dict(:anom => :anoma,
-         :thresh => :threshold,
-         :exceeds => :exceedance)
-
-    arg in fieldnames(typeof(mm)) || throw(KeyError(arg))
-    return gh = getfield(mm, arg)
-end
+function mymetric(mm::MHWCSO, arg::Symbol) end
 
 function _outarrays(gg::Matrix{T}, indices)
     CIx, nCIx, x, y = indices
@@ -904,3 +866,11 @@ function _outarrays(gg::Matrix{T}, indices)
     oclim
 end
 
+function mextreme(arguments)
+    nothing
+    # 1. calculate the MHW/MCS
+    # 2. label + events
+    # 3. pixel mean
+    # 4. annual mean and trend
+    return MHWCSO
+end
