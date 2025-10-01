@@ -15,7 +15,10 @@ const metrics = Dict(:means => 1,
                      :frequency => 5,
                      :days => 6,
                      :onset => 7,
-                     :decline => 8)
+                     :decline => 8,
+                     :categorys => 9)
+
+
 
 abstract type MWrapper end
 abstract type MEvents{TD} end 
@@ -43,6 +46,7 @@ struct Events{TE} <: MEvents{TE}
     decline::TE
     duration::TE
     sums::TE
+    categorys::TE
     dtype::Type{<:MEvents}
 end
 
@@ -167,11 +171,10 @@ excess(ms::MExtreme) = ms.exceeds
 const events = Dict(:mhw => (MHW, 0.9),
                     :mcs => (MCS, 0.1))
 
-# TODO: this object returns the clim and thresh by returning a MHW or MCS object so should reflect the name
-function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
+function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
     window::TI = convert(TI, window)
     smoothwindow = convert(TI, smoothwindow)
-    in(event, keys(events)) || error("$event is not a valid key. Try `:mhw` or `:mcs`")
+    in(event, keys(events)) || error(event," is not a valid event. Try `:mhw` or `:mcs`")
     ME, mthreshold = get(events, event, :mhw)
     threshold::T = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
     mhwix = timeindices(sstdate, mhwdate)
@@ -183,7 +186,7 @@ function subtemp(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange
     return ME(mhtemp, clima, thresh), CIs
 end
 
-function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T) # wrap?
+function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T; wrap::Bool=true)
     clim = Matrix{T}(undef, length(mlyd), size(cmst, 2))
     thresh = similar(clim)
     uranges = urange(clyd, win)
@@ -197,13 +200,13 @@ function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold
         end
         cv[60] = 0.5(cv[59] + cv[61])
         th[60] = 0.5(th[59] + th[61])
-        clim[:, n] = moving_means(cv, swindow, mlyd)
-        thresh[:, n] = moving_means(th, swindow, mlyd)
+        clim[:, n] = moving_means(cv, swindow, mlyd, wrap=wrap)
+        thresh[:, n] = moving_means(th, swindow, mlyd, wrap=wrap)
     end
     clim, thresh
 end
 
-function climthresh(cmst::Vector{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T)
+function climthresh(cmst::Vector{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T; wrap::Bool=true)
     uranges = urange(clyd, win)
     cv = Vector{T}(undef, 366)
     th = similar(cv)
@@ -214,8 +217,8 @@ function climthresh(cmst::Vector{T}, clyd, mlyd, win::TI, swindow::TI, threshold
     end
     cv[60] = 0.5(cv[59] + cv[61])
     th[60] = 0.5(th[59] + th[61])
-    clim = moving_means(cv, swindow, mlyd)
-    thresh = moving_means(th, swindow, mlyd)
+    clim = moving_means(cv, swindow, mlyd, wrap=wrap)
+    thresh = moving_means(th, swindow, mlyd, wrap=wrap)
     clim, thresh
 end
 
@@ -261,6 +264,8 @@ function urange(clyd::Vector{TI}, win::TI)
 end
 
 # TODO: remove the type signature from the mindur and maxgap. Enforce it inside if necessary.
+# umbrella function should call mylabel and the anomsa in one step.
+# Exceedance can be stored as a sparse array.
 function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     sty = excess(ms)
     # this will be absorbed in an umbrella function that calls mylabel.
@@ -375,15 +380,17 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
     lm::TI = size(m.temp, 1)
-    mt::TI = 6
+    mt::TI = 7
     outemp, outhsh, outcat = ntuple(_ -> Array{T, 3}(undef, x, y, lm), 3)
-    onsan, decan, means, cums, maxes, durs = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
+    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
             atod = anomsa(m, c, st, se, lm)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
-            outcat[CIx[c], st:se] .= categorys(atod)
+            cats = categorys(atod)
+            outcat[CIx[c], st:se] .= cats
+            catso[c][d] = cats
             onsan[c][d] = _onset(atod, st)
             decan[c][d] = _decline(atod, se, lm)
             means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
@@ -393,26 +400,28 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
         bl[nCIx, :] .= NaN
     end
     # TODO: Add category to the Events struct
-    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, m.edtype)
+    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
     mst, mse = evst
     lm::TI = size(m.temp, 1)
-    mt::TI = 6
+    mt::TI = 7
     outemp, outhsh, outcat = ntuple(_ -> Vector{T}(undef, lm), 3)
-    onsan, decan, means, cums, maxes, durs = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
+    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
     for (d, (st, se)) in enumerate(zip(mst, mse))
         atod = _anomsa(m.wdtype, m.temp, m.clim, m.thresh, st, se, lm)
         outemp[st:se] = atod.anom
         outhsh[st:se] = atod.threshanom
-        outcat[st:se] .= categorys(atod)
+            cats = categorys(atod)
+            outcat[CIx[c], st:se] .= cats
+            catso[c][d] = cats
         onsan[c][d] = _onset(atod, st)
         decan[c][d] = _decline(atod, se, lm)
         means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
     end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, m.edtype)
+    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
@@ -442,7 +451,6 @@ function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
         outmean[idx][CIx]  = mean.(getfield(ev, fm))
     end
     E = ev.dtype
-    # em = ev.dtype{Vector{T}}(ev.minimaxes)
     outmean[metrics[:maxes]][CIx] = mhcsminimax(E(ev.minimaxes)) 
     outmean[metrics[:frequency]][CIx] = @. length(ev.duration) / lfy
     outmean[metrics[:days]][CIx] = @. sum(ev.duration) / lfy 
@@ -506,8 +514,7 @@ function meanmetrics4(ev::MEvents{Vector{Vector{T}}}, mdate)::Matrix{T}
     outmean
 end
 
-function meanmetrics(ev::MEvents{Vector{T}}, indices, mdate)
-    # CIx, nCIx, x, y = indices
+function meanmetrics(ev::MEvents{Vector{T}}, mdate)
     # VEctor version
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
@@ -518,13 +525,21 @@ function meanmetrics(ev::MEvents{Vector{T}}, indices, mdate)
         outmean[idx]  = mean(getfield(ev, fm))
     end
     E = ev.dtype
-    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes)) # mhcminimax(ev.maxes)
-    outmean[metrics[:frequency]] = length(ev.duration) / lfy # frequency
-    outmean[metrics[:days]] = sum(ev.duration) / lfy #days
+    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes)) 
+    outmean[metrics[:frequency]] = length(ev.duration) / lfy
+    outmean[metrics[:days]] = sum(ev.duration) / lfy 
     outmean
 end
+function _yrdate(mdate::StepRange{Date}, evt)
+    
 
-function anumets(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
+    cst, cse, cols = evst
+    mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
+    mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
+    mapyst = map(x -> year.(mdate[x]), cst)
+mapyse = map(x -> year.(mdate[x]), cse)
+end
+function annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
     cst, cse, cols = evst
     mapcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     mapyr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
