@@ -1,4 +1,3 @@
-
 import Statistics: mean, quantile, std
 import Distributions: cdf, FDist, TDist
 using Dates
@@ -50,6 +49,20 @@ struct Events{TE} <: MEvents{TE}
     dtype::Type{<:MEvents}
 end
 
+struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N} #<: MEvents{TE}
+    means::TE
+    minimaxes::TE
+    onset::TE
+    decline::TE
+    duration::TE
+    sums::TE
+    categorys::TE
+    tpanom::Array{Ti, N}
+    thanom::Array{Ti, N}
+    ocateg::Array{Ti, N}
+    dtype::Type{<:MEvents}
+end
+
 struct EventHW{TA} <: MEvents{TA}
     maxes::TA
 end
@@ -84,10 +97,19 @@ function MCS(temp, clim, thresh)
     MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
+struct MHCMetrics{T, N, TD<:AbstractArray{T, N}} 
+    annuals::NTuple{N, TD}
+    means::TD
+    # errors::TD
+    rsquared::TD
+    coeff::TD
+    pvalues::TD
+end
+
 struct MHWCSO{T<:AbstractArray{<:AbstractFloat}}
-    outtempanom::T
-    outcats::T
-    outthreshanom::T
+    # outtempanom::T
+    # outcats::T
+    # outthreshanom::T
     # outclim::T
     # outhresh::T
     # outexceeds::Array{Bool}
@@ -401,8 +423,8 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     for bl in (outemp, outhsh, outcat)
         bl[nCIx, :] .= NaN
     end
-    # TODO: Add category to the Events struct
     return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
+    # return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
@@ -424,6 +446,7 @@ function anomsa(m::MExtreme{Vector{T}}, evst, indices)
     end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
     return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
+    # return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
@@ -459,60 +482,22 @@ function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     outmean
 end
 
-function meanmetrics2(ev::MEvents{Vector{Vector{T}}}, mdate)::NTuple{8, Vector{T}}
+# potentially
+function meanmetrics2(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
+    CIx, nCIx, x, y = indices
     lfy = (length ∘ unique)(year.(mdate))
-    z = length(metrics)
-    outmean = ntuple(_ -> zeros(length(ev.means)), Val(z))
-    E = ev.dtype
-    for (fm, idx) in metrics 
-        if fm == :maxes
-            outmean[idx][:] = mhcsminimax(E(ev.minimaxes))
-        elseif fm == :frequency
-            outmean[idx][:] = @. length(ev.duration) / lfy 
-        elseif fm == :days
-            outmean[idx][:] = @. sum(ev.duration) / lfy
-        else
-            outmean[idx][:] = mean.(getfield(ev, fm))
-        end
+    z = 8# length(metrics)
+    outmean = Array{T, 3}(undef, x, y, z)
+    outmean[nCIx, :] .= T(NaN)
+    # check the metrics dictionary to ensure order of variables
+    for fm in (:means, :sums, :onset, :decline, :duration)
+        idx = metrics[fm]
+        outmean[CIx, idx]  = mean.(getfield(ev, fm))
     end
-    outmean
-end
-
-function meanmetrics3(ev::MEvents{Vector{Vector{T}}}, mdate)::Vector{Vector{T}}
-    lfy = (length ∘ unique)(year.(mdate))
-    z = length(metrics)
-    outmean = [zeros(length(ev.means)) for _ in 1:z]
     E = ev.dtype
-    for (fm, idx) in metrics 
-        if fm == :maxes
-            outmean[idx] = mhcsminimax(E(ev.minimaxes))
-        elseif fm == :frequency
-            outmean[idx] = @. length(ev.duration) / lfy 
-        elseif fm == :days
-            outmean[idx] = @. sum(ev.duration) / lfy
-        else
-            outmean[idx]  = mean.(getfield(ev, fm))
-        end
-    end
-    outmean
-end
-
-function meanmetrics4(ev::MEvents{Vector{Vector{T}}}, mdate)::Matrix{T}
-    lfy = (length ∘ unique)(year.(mdate))
-    z = length(metrics)
-    outmean = zeros(T, length(ev.means), z)
-    E = ev.dtype
-    for (fm, idx) in metrics 
-        if fm == :maxes
-            outmean[:, idx] = mhcsminimax(E(ev.minimaxes))
-        elseif fm == :frequency
-            outmean[:, idx] = @. length(ev.duration) / lfy 
-        elseif fm == :days
-            outmean[:, idx] = @. sum(ev.duration) / lfy
-        else
-            outmean[:, idx]  = mean.(getfield(ev, fm))
-        end
-    end
+    outmean[CIx, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes)) 
+    outmean[CIx, metrics[:frequency]] = @. length(ev.duration) / lfy
+    outmean[CIx, metrics[:days]] = @. sum(ev.duration) / lfy 
     outmean
 end
 
@@ -664,6 +649,9 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
     outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    # outpvalue = Array{T, 3}(undef, x, y, z)
+    # outcoeff = similar(outpvalue)
+    # outrsqd = similar(outpvalue)
     for i in 1:z
         for ci in CIx
             outcoeff[i][ci],
@@ -681,42 +669,31 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
     outpvalue, outcoeff, outrsqd
 end
 
-function trend2(outannual::Vector{Vector{Vector{T}}})::NTuple{3, Vector{Vector{T}}}
-    X = 1:length(first(first(outannual))) # could be legnth of fullyear lfy
+# Input: outannual is a tuple of 3-D arrays
+# Output: each metric is a tuple of Matrices
+function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
+    CIx, nCIx, x, y = indices
+    X = 1:size(first(outannual), 3)
     z = length(outannual)
-    outpvalue = [zeros(length(first(outannual))) for _ in 1:z]
-    outcoeff = [zeros(length(first(outannual))) for _ in 1:z]
-    outrsqd = [zeros(length(first(outannual))) for _ in 1:z]
-    for i in eachindex(outannual)
-        for ci in eachindex(outannual[1])
-            outcoeff[i][ci],
-            outrsqd[i][ci], outpvalue[i][ci], = linreg(X, outannual[i][ci])
-            # V2 if linreg returns without pvalues
-            # outlg = linreg(X, outannual[i][ci,:])
-            # outpvalue[i][ci] = _pvalue(outlg)
-            # outcoeff[i][ci] = getindex(outlg, 2)
-            # outrsqd[i][ci] = getindex(outlg, 3)
-        end
-    end
-    outpvalue, outcoeff, outrsqd
-end
-
-function trend3(outannual::Vector{Matrix{T}})::NTuple{3, Matrix{T}}
-    X = 1:size(first(outannual), 1) # could be legnth of fullyear lfy
-    z = length(outannual)
-    outpvalue = zeros(T, size(first(outannual), 2), z)
-    outcoeff = zeros(T, size(first(outannual), 2), z)
-    outrsqd = zeros(T, size(first(outannual), 2), z)
-    for i in eachindex(outannual)
-        for ci in axes(outannual[1], 2)
+    # outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    # outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    # outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    outpvalue = Array{T, 3}(undef, x, y, z)
+    outcoeff = similar(outpvalue)
+    outrsqd = similar(outpvalue)
+    for i in 1:z
+        for ci in CIx
             outcoeff[ci, i],
-            outrsqd[ci, i], outpvalue[ci, i], = linreg(X, outannual[i][:, ci])
+            outrsqd[ci, i], outpvalue[ci, i], = linreg(X, outannual[i][ci,:])
             # V2 if linreg returns without pvalues
             # outlg = linreg(X, outannual[i][ci,:])
-            # outpvalue[i][ci] = _pvalue(outlg)
-            # outcoeff[i][ci] = getindex(outlg, 2)
-            # outrsqd[i][ci] = getindex(outlg, 3)
+            # outpvalue[ci, i] = _pvalue(outlg)
+            # outcoeff[ci, i] = getindex(outlg, 2)
+            # outrsqd[ci, i] = getindex(outlg, 3)
         end
+        outcoeff[nCIx, i] .= T(NaN)
+        outpvalue[nCIx, i] .= T(NaN)
+        outrsqd[nCIx, i] .= T(NaN)
     end
     outpvalue, outcoeff, outrsqd
 end
