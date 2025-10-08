@@ -868,17 +868,24 @@ function _outarrays(gg::Matrix{T}, indices)
     oclim
 end
 
-function mextreme(arguments)
-    nothing
-    # 1. calculate the MHW/MCS
-    mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
-    # 2. label + events
-    _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
-    anomsa(m::MExtreme{Matrix{T}}, evst, indices)
-    # 3. pixel 
-    meanmeanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
-    # 4. annual mean and trend
-    annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
-    trend(outannual::NTuple{8, Array{T, 3}}, indices)
-    return MHWCSO
+function mevents(ms, mindur, maxgap, indices)
+    evst = _mylabel(ms, mindur, maxgap)
+    ev = anomsa(ms, evst, indices)
+    return ev, evst
 end
+
+function mmetrics(ev, evst, indices, mdate)
+    mm = meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
+    am = annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
+    tr = trend(am::NTuple{8, Array{T, 3}}, indices)
+    MHCMetrics(am, mm, tr...)
+end
+
+#= STEPS
+    # 1. calculate the MHW/MCS
+    ms, indices = mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
+    # 2. label + events
+    ev, lb = mevents(ms, mindur, maxgap, indices)
+    # 3. pixel, annual and trend
+    mht = mmetrics(ev, lb, indices, mdate)
+=#
