@@ -97,7 +97,7 @@ function MCS(temp, clim, thresh)
     MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
-struct MHCMetrics{T, N, TD<:AbstractArray{T, N}} 
+struct MHCMetrics{T<:AbstractFloat, N, TD<:AbstractArray{T, N}} 
     annuals::NTuple{N, TD}
     means::TD
     # errors::TD
@@ -654,13 +654,13 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
     # outrsqd = similar(outpvalue)
     for i in 1:z
         for ci in CIx
-            outcoeff[i][ci],
-            outrsqd[i][ci], outpvalue[i][ci], = linreg(X, outannual[i][ci,:])
+            # outcoeff[i][ci],
+            # outrsqd[i][ci], outpvalue[i][ci], = linreg(X, outannual[i][ci,:])
             # V2 if linreg returns without pvalues
-            # outlg = linreg(X, outannual[i][ci,:])
-            # outpvalue[i][ci] = _pvalue(outlg)
-            # outcoeff[i][ci] = getindex(outlg, 2)
-            # outrsqd[i][ci] = getindex(outlg, 3)
+            outlg = linreg(X, outannual[i][ci,:])
+            outpvalue[i][ci], _ = _pvalue(outlg)
+            outcoeff[i][ci] = getindex(outlg, 2)
+            outrsqd[i][ci] = getindex(outlg, 3)
         end
         outcoeff[i][nCIx] .= T(NaN)
         outpvalue[i][nCIx] .= T(NaN)
@@ -683,13 +683,13 @@ function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
     outrsqd = similar(outpvalue)
     for i in 1:z
         for ci in CIx
-            outcoeff[ci, i],
-            outrsqd[ci, i], outpvalue[ci, i], = linreg(X, outannual[i][ci,:])
+            # outcoeff[ci, i],
+            # outrsqd[ci, i], outpvalue[ci, i], = linreg(X, outannual[i][ci,:])
             # V2 if linreg returns without pvalues
-            # outlg = linreg(X, outannual[i][ci,:])
-            # outpvalue[ci, i] = _pvalue(outlg)
-            # outcoeff[ci, i] = getindex(outlg, 2)
-            # outrsqd[ci, i] = getindex(outlg, 3)
+            outlg = linreg(X, outannual[i][ci,:])
+            outpvalue[ci, i], _ = _pvalue(outlg)
+            outcoeff[ci, i] = getindex(outlg, 2)
+            outrsqd[ci, i] = getindex(outlg, 3)
         end
         outcoeff[nCIx, i] .= T(NaN)
         outpvalue[nCIx, i] .= T(NaN)
@@ -707,13 +707,13 @@ function trend(outannual::NTuple{8, Vector{T}}, indices)
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
     for i in 1:z
-        outcoeff[i],
-        outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
+        # outcoeff[i],
+        # outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
         # V2 if linreg returns without pvalues
-        # outlg = linreg(X, outannual[i])
-        # outpvalue[i] = _pvalue(outlg)
-        # outcoeff[i] = getindex(outlg, 2)
-        # outrsqd[i] = getindex(outlg, 3)
+        outlg = linreg(X, outannual[i])
+        outpvalue[i], _ = _pvalue(outlg)
+        outcoeff[i] = getindex(outlg, 2)
+        outrsqd[i] = getindex(outlg, 3)
     end
     outpvalue, outcoeff, outrsqd
 end
@@ -767,19 +767,37 @@ function linreg(x::AbstractVector, y::AbstractVector)
     f_stat_b = r2 / (1 - r2) * (n - 2) / 1
     p_value_f = 1 - cdf(FDist(1, n - 2), f_stat_b)
 
-    return b, r2, p_value_fa, a, p_value_tb, sigma_a, sigma_b, sigma_e # NOTE: if returning directly into out{p,c,r}
-    # return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
+    # return a, b, r2, p_value_fa, p_value_tb, sigma_a, sigma_b, sigma_e # NOTE: if returning directly into out{p,c,r}
+    return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
 end
 
+
+function _pvalue(olg::NTuple{7, T})
+    b = olg[2]
+    r2 = olg[3]
+    sigma_b = olg[5]
+    n = convert(Int, olg[7])
+
+    # Calculate F-Distribution p-value
+    f_stat = r2 / (1 - r2) * (n - 2) / 1
+    p_value_f = 1 - cdf(FDist(1, n - 2), f_stat)
+    # Calculate T-Distribution p-value
+    t_stat = b / sigma_b
+    p_value_t = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
+    return p_value_f, p_value_t
+end
 ####
 # Here begin the Interfaces to access the results and outputs
-# NOTE: the internal variable `indices` has to be stored somewhere in one of the outward structs if it is to be used to return 2D to 3D outputs
 ####
 
 for (f, fn) in ((:pvalues, :outpvalue), (:coeffs, :outcoeff), (:rsquared, :outrsquared))
     @eval begin
         function $f(am::MHWCSO, metric)
             idx = get(metrics, metric, metric)
+            # for MHCMetrics
+            # typeof(idx) <: Integer ? nothing : throw(KeyError(idx))
+            # xx = getfield(am, $fn)
+            # ndims(xx) == 1 ? getindex(xx, idx) : getindex(xx, :,:,idx)
             if typeof(idx) == Int
                 return getindex(am.$fn, idx)
             else
@@ -831,7 +849,14 @@ function mymetric(mm::MExtreme, indices, arg::Symbol)
     return _outarrays(gh, indices)
 end
 
-function mymetric(mm::MHWCSO, arg::Symbol) end
+function mymetric(mm::MHWCSO, type=:means, metric)
+    type in (:means, :annuals) || throw(error(type, "not valid. Try `:means` or `:annuals`"))
+    idx = get(metrics, metric, metric)
+    <:(typeof(idx), Integer) || throw(KeyError(idx))
+    means = getfield(mm, type)
+    outm = ndims(means) == 1 || isa(means, NTuple) ? getindex(means, idx) : getindex(means, :,:,idx)
+    return outm 
+end
 
 function _outarrays(gg::Matrix{T}, indices)
     CIx, nCIx, x, y = indices
