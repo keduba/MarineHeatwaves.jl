@@ -649,6 +649,8 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
     outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    outerror_coeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
+    outintercept = ntuple(_ -> Matrix{T}(undef, x, y), z)
     # outpvalue = Array{T, 3}(undef, x, y, z)
     # outcoeff = similar(outpvalue)
     # outrsqd = similar(outpvalue)
@@ -659,14 +661,16 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
             # V2 if linreg returns without pvalues
             outlg = linreg(X, outannual[i][ci,:])
             outpvalue[i][ci], _ = _pvalue(outlg)
-            outcoeff[i][ci] = getindex(outlg, 2)
+            outcoeff[i][ci] = getindex(outlg, 1)
+            outintercept[i][ci] = getindex(outlg, 2)
             outrsqd[i][ci] = getindex(outlg, 3)
+            outerror_coeff[i][ci] = getindex(outlg, 4)
         end
         outcoeff[i][nCIx] .= T(NaN)
         outpvalue[i][nCIx] .= T(NaN)
         outrsqd[i][nCIx] .= T(NaN)
     end
-    outpvalue, outcoeff, outrsqd
+    outpvalue, outcoeff, outrsqd, outintercept, outerror_coeff
 end
 
 # Input: outannual is a tuple of 3-D arrays
@@ -681,6 +685,8 @@ function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
     outpvalue = Array{T, 3}(undef, x, y, z)
     outcoeff = similar(outpvalue)
     outrsqd = similar(outpvalue)
+    outerror_coeff = similar(outpvalue)
+    outintercept = similar(outpvalue)
     for i in 1:z
         for ci in CIx
             # outcoeff[ci, i],
@@ -688,14 +694,16 @@ function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
             # V2 if linreg returns without pvalues
             outlg = linreg(X, outannual[i][ci,:])
             outpvalue[ci, i], _ = _pvalue(outlg)
-            outcoeff[ci, i] = getindex(outlg, 2)
+            outcoeff[ci, i] = getindex(outlg, 1)
+            outintercept[ci, i] = getindex(outlg, 2)
             outrsqd[ci, i] = getindex(outlg, 3)
+            outerror_coeff[ci, i] = getindex(outlg, 4)
         end
         outcoeff[nCIx, i] .= T(NaN)
         outpvalue[nCIx, i] .= T(NaN)
         outrsqd[nCIx, i] .= T(NaN)
     end
-    outpvalue, outcoeff, outrsqd
+    outpvalue, outcoeff, outrsqd, outintercept, outerror_coeff
 end
 
 # Vectorversion Output: each metric is a tuple of vectors
@@ -706,16 +714,20 @@ function trend(outannual::NTuple{8, Vector{T}}, indices)
     outpvalue = Vector{T}(undef, z)
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
+    outintercept = Vector{T}(undef, z)
+    outerror_coeff = Vector{T}(undef, z)
     for i in 1:z
         # outcoeff[i],
         # outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
         # V2 if linreg returns without pvalues
         outlg = linreg(X, outannual[i])
         outpvalue[i], _ = _pvalue(outlg)
-        outcoeff[i] = getindex(outlg, 2)
+        outcoeff[i] = getindex(outlg, 1)
+        outintercept[i] = getindex(outlg, 2)
         outrsqd[i] = getindex(outlg, 3)
+        outerror_coeff[i] = getindex(outlg, 4)
     end
-    outpvalue, outcoeff, outrsqd
+    outpvalue, outcoeff, outrsqd, outintercept, outerror_coeff
 end
 
 
