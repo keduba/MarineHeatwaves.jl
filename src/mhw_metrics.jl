@@ -42,7 +42,7 @@ eventmetrics(
     msst::Union{MCTemp,MHTemp}, mstartsxs, mendsxs
 ) = _eventmetrics(msst.temp, msst.clima, msst.thresh, msst.lyday, msst.anomfn, msst.argfn, msst.dates, mstartsxs, mendsxs)
 
-
+#=
 function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstartsxs, mendsxs)
     mni, cmi, mxi, drt, cats, rons, rdcs, vri, sdt, edt, cls, rws = ntuple(_ -> Vector(undef, length(mstartsxs)), 12)
     fullyears = unique(year.(msst.dates))
@@ -79,7 +79,7 @@ function matevents(msms::MarineHW, msst::MarineHeatWave, mexc::BitMatrix, mstart
 
     return msms, edf, climout, threshout
 end
-
+=#
 
 # TODO: a more appropriate name for this function.
 # - is it more safe memory wise to save all the vector space in memory or should we automatically chunk it? How do we achieve this?

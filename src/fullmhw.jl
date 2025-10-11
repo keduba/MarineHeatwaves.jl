@@ -97,12 +97,13 @@ function MCS(temp, clim, thresh)
     MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
-struct MHCMetrics{T<:AbstractFloat, N, TD<:AbstractArray{T, N}} 
-    annuals::NTuple{N, TD}
+struct MHCMetrics{T<:AbstractFloat, Nm, N, TD<:AbstractArray{T, N}} 
+    annuals::NTuple{Nm, TD}
     means::TD
-    # errors::TD
-    rsquared::TD
     coeff::TD
+    errors::TD
+    rsquared::TD
+    intercepts::TD
     pvalues::TD
 end
 
@@ -151,6 +152,7 @@ function mhcsminimax(x::EventCS{Vector{Vector{T}}})
     return @inbounds [minimum(ia) for ia in x.maxes]
 end
 
+"Return the range of date B in date A."
 function timeindices(sstdate::StepRange{Date, Day}, evtdate::StepRange{Date, Day})
     si::TI = findfirst(isequal(first(evtdate)), sstdate)
     ei::TI = findfirst(isequal(last(evtdate)), sstdate)
@@ -159,6 +161,10 @@ end
 
 seamask(sst::AbstractArray, dims) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
 
+"""
+    Calculate the subset of the input array. For n-dimensional array input where n > 1, return n-1 dimension. Return the subset and indices of mask.
+
+"""
 function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     N = ndims(sst)
     N ≤ 0 && error("0-dimensional data just can't work.")
@@ -195,6 +201,10 @@ excess(ms::MExtreme) = ms.exceeds
 const events = Dict(:mhw => (MHW, 0.9),
                     :mcs => (MCS, 0.1))
 
+"""
+    Return a MExtreme (MHW or MCS).
+
+"""
 function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
     window::TI = convert(TI, window)
     smoothwindow = convert(TI, smoothwindow)
@@ -210,6 +220,11 @@ function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRang
     return ME(mhtemp, clima, thresh), CIs
 end
 
+"""
+    Calculate and return the climatology mean and quantile.
+
+
+"""
 function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T; wrap::Bool=true)
     clim = Matrix{T}(undef, length(mlyd), size(cmst, 2))
     thresh = similar(clim)
@@ -277,6 +292,7 @@ function moving_mean(A::AbstractVector, m::TI, wrap::Bool)
     return out
 end
 
+"Return a vector of all indices of 366 day from the leapyearday vector"
 function urange(clyd::Vector{TI}, win::TI)
     out = [[] for _ in 1:366]
     for n in 1:366
@@ -290,6 +306,11 @@ end
 # TODO: remove the type signature from the mindur and maxgap. Enforce it inside if necessary.
 # umbrella function should call mylabel and the anomsa in one step.
 # Exceedance can be stored as a sparse array.
+
+"""
+    Return the start and end positions  and pixel columns where MExtremes were detected.
+
+"""
 function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     sty = excess(ms)
     # this will be absorbed in an umbrella function that calls mylabel.
@@ -381,6 +402,10 @@ function anomsa(m::MHW{Vector{T}}, st, en, ls)
     return MHWrapper(outs...)
 end
 
+"""
+    Return the rate of onset for each event.
+
+"""
 function _onset(atod::MWrapper, mst)
     fan = first(atod) 
     nmx = mhcsminimax(atod) 
@@ -390,6 +415,10 @@ function _onset(atod::MWrapper, mst)
     mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
 end
 
+"""
+    Return the rate of decline for each event.
+
+"""
 function _decline(atod::MWrapper, mse, lnx)
     lan = last(atod)
     nmx = mhcsminimax(atod) 
@@ -400,6 +429,9 @@ function _decline(atod::MWrapper, mse, lnx)
     mse < lnx ? /(lnmx, (wsnx + 0.5)) : ngx == lnx ? snmx : /(snmx, wsnx)
 end
 
+"""
+    Compute the anomaly of the events in each pixel and return the Event.
+"""
 function anomsa(m::MExtreme{Matrix{T}}, evst, indices) 
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
@@ -423,8 +455,8 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     for bl in (outemp, outhsh, outcat)
         bl[nCIx, :] .= NaN
     end
-    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
-    # return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
+    # return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
+    return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
@@ -445,8 +477,8 @@ function anomsa(m::MExtreme{Vector{T}}, evst, indices)
         means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
     end
     # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
-    # return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
+    # return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
+    return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
@@ -462,6 +494,9 @@ function _events(anom::MWrapper)
     return means, cums, maxes, durs
 end
 
+"""
+    Return the mean of the metrics in each pixel.
+"""
 function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     CIx, nCIx, x, y = indices
     lfy = (length ∘ unique)(year.(mdate))
@@ -483,6 +518,9 @@ function meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
 end
 
 # potentially
+"""
+    Return the mean of the metrics in each pixel.
+"""
 function meanmetrics2(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     CIx, nCIx, x, y = indices
     lfy = (length ∘ unique)(year.(mdate))
@@ -502,7 +540,7 @@ function meanmetrics2(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
 end
 
 function meanmetrics(ev::MEvents{Vector{T}}, mdate)
-    # VEctor version
+    # Vector version
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
     outmean = Vector{T}(undef, z) 
@@ -518,7 +556,10 @@ function meanmetrics(ev::MEvents{Vector{T}}, mdate)
     outmean
 end
 
-function _yrdate(mdate::StepRange{Date}, evt)
+"""
+    Helper for the annualmetrics to deal with the year start and end ranges.
+"""
+function _yrdate(mdate::StepRange{Date}, evst)
     cst, cse, cols = evst
     mcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     myr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
@@ -527,8 +568,12 @@ function _yrdate(mdate::StepRange{Date}, evt)
     return mcste, myr, myst, myse
 end
 
+"""
+    Compute the metrics for each year in the desired period.
+"""
 function annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
+    _, _, cols = evst
     lfy = (length ∘ unique)(year.(mdate))
     CIx, nCIx, x, y = indices
     z =  length(metrics)
@@ -547,16 +592,16 @@ function annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
                     idx = metrics[fm]
                 outannual[idx][cx, i]  = mean(getfield(ev, fm)[h][yx])
                 end
-             outmean[metrics[:maxes]][cx, i] = mhcsminimax(E(ev.minimaxes[h][yx]))
-             outmean[metrics[:frequency][cx, ] = convert(T, length(yx))
-             outmean[metrics[:days]][cx, i] = convert(T, length(ev.duration[h][yx]))
+             outannual[metrics[:maxes]][cx, i] = mhcsminimax(E(ev.minimaxes[h][yx]))
+             outannual[metrics[:frequency]][cx, i] = convert(T, length(yx))
+             outannual[metrics[:days]][cx, i] = convert(T, length(ev.duration[h][yx]))
             end
         end
     outannual
 end
 
-
-function anumets2(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Vector{Vector{T}}}
+# TODO: Remove. Did not pass the benchmark test.
+function annualmetrics2(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Vector{Vector{T}}}
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -584,6 +629,7 @@ function anumets2(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Vector{Ve
     outannual
 end
 
+# TODO: Remove. Did not pass the benchmark test.
 
 function anumets3(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Matrix{T}}
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
@@ -615,7 +661,7 @@ function anumets3(ev::MEvents{Vector{Vector{T}}}, mdate, evst)::Vector{Matrix{T}
 end
 
 # vector version
-function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
+function annualmetrics(ev::MEvents{Vector{T}}, indices, mdate, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -640,9 +686,11 @@ function anumets(ev::MEvents{Vector{T}}, indices, mdate, evst)
     outannual
 end
 
-# Input: outannual is a tuple of 3-D arrays
-# Output: each metric is a tuple of Matrices
-function trend(outannual::NTuple{8, Array{T, 3}}, indices)
+"""
+    Return the coefficient, error, intercept, R² and p-value.
+
+"""
+function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
     CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
     z = length(outannual)
@@ -670,18 +718,13 @@ function trend(outannual::NTuple{8, Array{T, 3}}, indices)
         outpvalue[i][nCIx] .= T(NaN)
         outrsqd[i][nCIx] .= T(NaN)
     end
-    outpvalue, outcoeff, outrsqd, outintercept, outerror_coeff
+    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue 
 end
 
-# Input: outannual is a tuple of 3-D arrays
-# Output: each metric is a tuple of Matrices
-function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
+function trend2(outannual::NTuple{N, Array{T, 3}}, indices) where N
     CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
     z = length(outannual)
-    # outpvalue = ntuple(_ -> Matrix{T}(undef, x, y), z)
-    # outcoeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
-    # outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outpvalue = Array{T, 3}(undef, x, y, z)
     outcoeff = similar(outpvalue)
     outrsqd = similar(outpvalue)
@@ -689,8 +732,6 @@ function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
     outintercept = similar(outpvalue)
     for i in 1:z
         for ci in CIx
-            # outcoeff[ci, i],
-            # outrsqd[ci, i], outpvalue[ci, i], = linreg(X, outannual[i][ci,:])
             # V2 if linreg returns without pvalues
             outlg = linreg(X, outannual[i][ci,:])
             outpvalue[ci, i], _ = _pvalue(outlg)
@@ -702,12 +743,14 @@ function trend2(outannual::NTuple{8, Array{T, 3}}, indices)
         outcoeff[nCIx, i] .= T(NaN)
         outpvalue[nCIx, i] .= T(NaN)
         outrsqd[nCIx, i] .= T(NaN)
+        outerror_coeff[nCIx, i] .= T(NaN)
+        outintercept[nCIx, i] .= T(NaN)
     end
-    outpvalue, outcoeff, outrsqd, outintercept, outerror_coeff
+    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue 
 end
 
 # Vectorversion Output: each metric is a tuple of vectors
-function trend(outannual::NTuple{8, Vector{T}}, indices)
+function trend(outannual::NTuple{N, Vector{T}}, indices) where N
     # CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 1)
     z = length(outannual)
@@ -727,7 +770,7 @@ function trend(outannual::NTuple{8, Vector{T}}, indices)
         outrsqd[i] = getindex(outlg, 3)
         outerror_coeff[i] = getindex(outlg, 4)
     end
-    outpvalue, outcoeff, outrsqd, outintercept, outerror_coeff
+    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue 
 end
 
 
@@ -779,12 +822,11 @@ function linreg(x::AbstractVector, y::AbstractVector)
     f_stat_b = r2 / (1 - r2) * (n - 2) / 1
     p_value_f = 1 - cdf(FDist(1, n - 2), f_stat_b)
 
-    # return a, b, r2, p_value_fa, p_value_tb, sigma_a, sigma_b, sigma_e # NOTE: if returning directly into out{p,c,r}
     return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
 end
 
 
-function _pvalue(olg::NTuple{7, T})
+function _pvalue(olg::NTuple{N, <:AbstractFloat}) where N
     b = olg[2]
     r2 = olg[3]
     sigma_b = olg[5]
@@ -793,28 +835,26 @@ function _pvalue(olg::NTuple{7, T})
     # Calculate F-Distribution p-value
     f_stat = r2 / (1 - r2) * (n - 2) / 1
     p_value_f = 1 - cdf(FDist(1, n - 2), f_stat)
+
     # Calculate T-Distribution p-value
     t_stat = b / sigma_b
     p_value_t = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
+    
     return p_value_f, p_value_t
 end
+
 ####
-# Here begin the Interfaces to access the results and outputs
+# Interfaces 
 ####
 
 for (f, fn) in ((:pvalues, :outpvalue), (:coeffs, :outcoeff), (:rsquared, :outrsquared))
     @eval begin
-        function $f(am::MHWCSO, metric)
+        function $f(am::MHCMetrics, metric)
             idx = get(metrics, metric, metric)
             # for MHCMetrics
-            # typeof(idx) <: Integer ? nothing : throw(KeyError(idx))
-            # xx = getfield(am, $fn)
-            # ndims(xx) == 1 ? getindex(xx, idx) : getindex(xx, :,:,idx)
-            if typeof(idx) == Int
-                return getindex(am.$fn, idx)
-            else
-                throw(KeyError(idx))
-            end
+            <:(typeof(idx), Integer) || throw(KeyError(idx))
+            xx = getfield(am, $fn)
+            ndims(xx) == 1 ? getindex(xx, idx) : getindex(xx, :,:,idx)
         end
     end
 end
@@ -837,6 +877,7 @@ end
 
     # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
  
+# NOTE: We should also return the start and end dates 
 function mymetric(ev::MEvents, indices)
     ids = mymetric(ev)
     cix = getindex(indices, 1)
@@ -861,17 +902,21 @@ function mymetric(mm::MExtreme, indices, arg::Symbol)
     return _outarrays(gh, indices)
 end
 
-function mymetric(mm::MHWCSO, type=:means, metric)
-    type in (:means, :annuals) || throw(error(type, "not valid. Try `:means` or `:annuals`"))
+function mymetric(mm::MHCMetrics, field, metric)
+    field in (:means, :annuals) || throw(error(field, " not a valid option. Try `:means` or `:annuals`"))
     idx = get(metrics, metric, metric)
     <:(typeof(idx), Integer) || throw(KeyError(idx))
-    means = getfield(mm, type)
+    means = getfield(mm, field)
     outm = ndims(means) == 1 || isa(means, NTuple) ? getindex(means, idx) : getindex(means, :,:,idx)
     return outm 
 end
 
+"""
+    Helper to return Matrix as 3-D array. 
+"""
 function _outarrays(gg::Matrix{T}, indices)
     CIx, nCIx, x, y = indices
+    # Each column in gg is a pixel, and each row is a date. 
     oclim = Array{T, 3}(undef, x, y, size(gg, 1))
     for (col, cx) in enumerate(CIx)
         oclim[cx, :] = gg[:, col]
@@ -880,17 +925,26 @@ function _outarrays(gg::Matrix{T}, indices)
     oclim
 end
 
+"""
+    Return the Events and the labels (starts and end positions) of the event.
+"""
 function mevents(ms, mindur, maxgap, indices)
+    mindur, maxgap = convert.(TI, (mindur, maxgap))
     evst = _mylabel(ms, mindur, maxgap)
     ev = anomsa(ms, evst, indices)
     return ev, evst
 end
 
+"""
+    Return the computed metrics - means, annuals and linear regression outputs as MHCMetrics.
+"""
 function mmetrics(ev, evst, indices, mdate)
-    mm = meanmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
+    mm = meanmetrics2(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     am = annualmetrics(ev::MEvents{Vector{Vector{T}}}, indices, mdate, evst)
-    tr = trend(am::NTuple{8, Array{T, 3}}, indices)
-    MHCMetrics(am, mm, tr...)
+    M = length(metrics)
+    N = ndims(mm)
+    tr = trend2(am::NTuple{M, Array{T, N}}, indices)
+    MHCMetrics{T, M, N, typeof(mm)}(am, mm, tr...)
 end
 
 #= STEPS
