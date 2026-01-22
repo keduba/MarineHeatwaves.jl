@@ -37,7 +37,7 @@ struct MHWrapper{T} <: MWrapper
     onset::T
     decline::T
 end
-#
+
 # struct Events{TE} <: MEvents{TE}
 #     means::TE
 #     minimaxes::TE

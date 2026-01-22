@@ -38,3 +38,9 @@ end
 	#@test size(MarineHeatwaves.clim(rand(5000), drg), 1) == 366
     # @test MarineHeatwaves.exceed()
 end
+
+@testset "Full Tests" begin
+    @testset "" begin
+    	
+    end
+end
