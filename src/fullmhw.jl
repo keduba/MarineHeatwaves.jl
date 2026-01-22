@@ -622,7 +622,6 @@ function annualmetrics(ev::MEvents{Vector{T}}, indices, mdate, evst)
             if isempty(yx) 
                 yx = findall(yr .== me)
             end
-            # NOTE: Added
             for fm in (:means, :sums, :onset, :decline, :duration)
                 idx = metrics[fm]
                 outannual[idx][i]  = mean(getfield(ev, fm)[yx])
@@ -648,14 +647,8 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
     outrsqd = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outerror_coeff = ntuple(_ -> Matrix{T}(undef, x, y), z)
     outintercept = ntuple(_ -> Matrix{T}(undef, x, y), z)
-    # outpvalue = Array{T, 3}(undef, x, y, z)
-    # outcoeff = similar(outpvalue)
-    # outrsqd = similar(outpvalue)
     for i in 1:z
         for ci in CIx
-            # outcoeff[i][ci],
-            # outrsqd[i][ci], outpvalue[i][ci], = linreg(X, outannual[i][ci,:])
-            # V2 if linreg returns without pvalues
             outlg = linreg(X, outannual[i][ci,:])
             outpvalue[i][ci], _ = _pvalue(outlg)
             outcoeff[i][ci] = getindex(outlg, 1)
@@ -681,7 +674,6 @@ function trend2(outannual::NTuple{N, Array{T, 3}}, indices) where N
     outintercept = similar(outpvalue)
     for i in 1:z
         for ci in CIx
-            # V2 if linreg returns without pvalues
             outlg = linreg(X, outannual[i][ci,:])
             outpvalue[ci, i], _ = _pvalue(outlg)
             outcoeff[ci, i] = getindex(outlg, 1)
@@ -700,7 +692,6 @@ end
 
 # Vectorversion Output: each metric is a tuple of vectors
 function trend(outannual::NTuple{N, Vector{T}}, indices) where N
-    # CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 1)
     z = length(outannual)
     outpvalue = Vector{T}(undef, z)
@@ -709,9 +700,6 @@ function trend(outannual::NTuple{N, Vector{T}}, indices) where N
     outintercept = Vector{T}(undef, z)
     outerror_coeff = Vector{T}(undef, z)
     for i in 1:z
-        # outcoeff[i],
-        # outrsqd[i], outpvalue[i], = linreg(X, outannual[i])
-        # V2 if linreg returns without pvalues
         outlg = linreg(X, outannual[i])
         outpvalue[i], _ = _pvalue(outlg)
         outcoeff[i] = getindex(outlg, 1)
@@ -749,28 +737,6 @@ function linreg(x::AbstractVector, y::AbstractVector)
     sigma_e = sqrt(max((ssyy - b^2 * ssxx) / (n - 2), 0))
     sigma_a = sigma_e * sqrt(sum(x .^ 2) / (n * ssxx))
     sigma_b = sigma_e / sqrt(ssxx)
-
-
-    #= Calculate the F-statistic
-    f_stat_a = (ssxy^2 / ssxx) / (ssyy - ssxy^2 / ssxx) * (n - 2)
-
-    # Calculate the p-value for the F-statistic
-    p_value_fa = 1 - cdf(FDist(1, n - 2), f_stat_a)
-
-    # Calculate the t-statistic for the slope (b)
-    t_stat_b = b / sigma_b
-
-    # Calculate the p-value for the t-statistic
-    p_value_ta = 2 * (1 - cdf(TDist(n - 2), abs(t_stat_b)))
-
-    # Calculate T-Distribution p-value
-    t_stat = b / sigma_b
-    p_value_tb = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
-
-    # Calculate F-Distribution p-value
-    f_stat_b = r2 / (1 - r2) * (n - 2) / 1
-    p_value_f = 1 - cdf(FDist(1, n - 2), f_stat_b)
-    =#
     return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
 end
 
