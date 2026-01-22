@@ -17,12 +17,56 @@ const metrics = Dict(:means => 1,
                      :decline => 8,
                      :categorys => 9)
 
+const events = Dict(:mhw => (MHW, 0.9),
+                    :mcs => (MCS, 0.1))
 
+# The Abstract types
 
 abstract type MWrapper end
-abstract type MEvents{TD} end 
+abstract type MEvents{TE} end 
 abstract type MExtreme{TD<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end 
 
+
+# Input structs
+
+struct EventHW{TE} <: MEvents{TE}
+    maxes::TE
+end
+
+struct EventCS{TE} <: MEvents{TE}
+    maxes::TE
+end
+
+struct MCS{TA,V} <: MExtreme{TA,V}
+    temp::TA
+    clim::TA
+    thresh::TA
+    exceeds::V
+    edtype::Type{EventCS}
+end
+
+function MCS(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
+    temp = convert(typeof(clim), temp)
+    exc = _excess(thresh, temp)
+    MCS(temp, clim, thresh, exc, EventCS)
+end
+
+struct MHW{TA,V} <: MExtreme{TA,V}
+    temp::TA
+    clim::TA
+    thresh::TA
+    exceeds::V
+    edtype::Type{EventHW}
+end
+
+function MHW(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
+    temp = convert(typeof(clim), temp)
+    exc = _excess(temp, thresh)
+    MHW(temp, clim, thresh, exc, EventHW)
+end
+
+
+# Internal structs
 
 struct MCWrapper{T} <: MWrapper
     anom::Vector{T}
@@ -49,7 +93,7 @@ end
 #     dtype::Type{<:MEvents}
 # end
 
-struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N} #<: MEvents{TE}
+struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N}
     means::TE
     minimaxes::TE
     onset::TE
@@ -63,43 +107,9 @@ struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N} #<: MEvents{TE}
     dtype::Type{<:MEvents}
 end
 
-struct EventHW{TA} <: MEvents{TA}
-    maxes::TA
-end
+# Output structs
 
-struct EventCS{TA} <: MEvents{TA}
-    maxes::TA
-end
-
-struct MCS{TA,V} <: MExtreme{TA,V}
-    temp::TA
-    clim::TA
-    thresh::TA
-    exceeds::V
-    edtype::Type{EventCS}
-end
-
-struct MHW{TA, V} <: MExtreme{TA,V}
-    temp::TA
-    clim::TA
-    thresh::TA
-    exceeds::V
-    edtype::Type{EventHW}
-end
-
-function MHW(temp, clim, thresh)
-    temp = convert(typeof(clim), temp)
-    exc = _excess(temp, thresh)
-    MHW(temp, clim, thresh, exc, EventHW)
-end
-
-function MCS(temp, clim, thresh)
-    temp = convert(typeof(clim), temp)
-    exc = _excess(thresh, temp)
-    MCS{typeof(temp), typeof(clim), typeof(thresh), typeof(exc)}(temp, clim, thresh, exc, EventCS)
-end
-
-struct MHCMetrics{T<:AbstractFloat, Nm, N, TD<:AbstractArray{T, N}} 
+struct MHCMetrics{T<:AbstractFloat, Nm, N, TD<:AbstractArray{T, N}}
     annuals::NTuple{Nm, TD}
     means::TD
     coeffs::TD
@@ -122,6 +132,9 @@ struct MHWCSO{T<:AbstractArray{<:AbstractFloat}}
     outcoeff::T
     outrsquared::T
 end
+
+
+# Base implementations for internal structs
 
 for op = (:length, :maximum, :minimum, :argmax, :argmin, :sum,  :first, :last)
     @eval begin
@@ -155,7 +168,7 @@ function mhcsminimax(x::EventCS{Vector{Vector{T}}})
 end
 
 "Return the range of date B in date A."
-function timeindices(sstdate::StepRange{Date, Day}, evtdate::StepRange{Date, Day})
+function timeindices(sstdate::StepRange{Date, Day}, evtdate::StepRange{Date, Day})::UnitRange
     si::TI = findfirst(isequal(first(evtdate)), sstdate)
     ei::TI = findfirst(isequal(last(evtdate)), sstdate)
     return range(si, ei)
@@ -170,13 +183,12 @@ seamask(sst::AbstractArray, dims) = dropdims(count(!isnan, sst, dims=dims) .> 0,
 function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     N = ndims(sst)
     N ≤ 0 && error("0-dimensional data just can't work.")
-
+    in(N, [1, 3]) || error("Expected 1 or 3 dimensions. Got $N dimensions.")
     xz = seamask(sst, N)
-    # TODO: condition on N==1 
-    if N == 1
-        !xz[1] && error("Please check your data. It appears to be all `NaN` or `missing`.")
+
+    if N == 1 
+        xz[1] || error("Please check your data. It appears to be all `NaN` or `missing`.")
     end
-    N == 1 && xz[1] || error("Please check your data. It appears to be all `NaN` or `missing`.")
 
     if N == 3
         CIx = CartesianIndices(xz)[xz]
@@ -187,7 +199,7 @@ function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
         x, y = Base.front(size(sst))
         nCIx = setdiff(CartesianIndices((x, y)), CIx)
         return msst, csst, (CIx, nCIx, x, y)
-    elseif N == 1
+    else
         CIx = TI(xz[1])
         @views begin
             msst = sst[mhwix]
@@ -204,17 +216,11 @@ _excess(tp, th) = tp .> th
 
 excess(ms::MExtreme) = ms.exceeds
 
-const events = Dict(:mhw => (MHW, 0.9),
-                    :mcs => (MCS, 0.1))
-
 """
     Return a MExtreme (MHW or MCS).
 
 """
-function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange, event=:mhw; window=5, smoothwindow=31, threshold=nothing)
-    window::TI = convert(TI, window)
-    smoothwindow = convert(TI, smoothwindow)
-    # convert(typeof)
+function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing)
     in(event, keys(events)) || error(event," is not a valid event. Try `:mhw` or `:mcs`")
     ME, mthreshold = get(events, event, :mhw)
     threshold::T = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
@@ -231,10 +237,12 @@ end
     Calculate and return the climatology mean and quantile.
 
 """
-function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T; wrap::Bool=true)
+function climthresh(cmst::Matrix{T}, clyd::Vector{TI}, mlyd::Vector{TI}, window::Integer, swindow::Integer, threshold::T; wrap::Bool=true)
+    window::TI = convert(TI, window)
+    smoothwindow = convert(TI, swindow)
     clim = Matrix{T}(undef, length(mlyd), size(cmst, 2))
     thresh = similar(clim)
-    uranges = urange(clyd, win)
+    uranges = urange(clyd, window)
     cv = Vector{T}(undef, 366)
     th = similar(cv)
     for (n, vec) in enumerate(eachcol(cmst))
@@ -251,7 +259,9 @@ function climthresh(cmst::Matrix{T}, clyd, mlyd, win::TI, swindow::TI, threshold
     clim, thresh
 end
 
-function climthresh(cmst::Vector{T}, clyd, mlyd, win::TI, swindow::TI, threshold::T; wrap::Bool=true)
+function climthresh(cmst::Vector{T}, clyd, mlyd, window::Integer, swindow::Integer, threshold::T; wrap::Bool=true)
+    window::TI = convert(TI, window)
+    smoothwindow = convert(TI, swindow)
     uranges = urange(clyd, win)
     cv = Vector{T}(undef, 366)
     th = similar(cv)
