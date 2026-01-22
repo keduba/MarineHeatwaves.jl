@@ -319,9 +319,6 @@ function urange(clyd::Vector{TI}, win::TI)
     out
 end
 
-# TODO: remove the type signature from the mindur and maxgap. Enforce it inside if necessary.
-# umbrella function should call mylabel and the anomsa in one step.
-# Exceedance can be stored as a sparse array.
 
 """
     Return the start and end positions  and pixel columns where MExtremes were detected.
@@ -387,10 +384,10 @@ end
 
 function _anomsa(sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::TI, lm::TI)
     @views begin
-    ant = sst[st:se] - clim[st:se]
-    tht = thsh[st:se] - clim[st:se]
-    ont = sst[max(1, st - 1)] - clim[max(1, st - 1)]
-    dnt = sst[min(lm, se + 1)] - clim[min(lm, se + 1)]
+        ant = sst[st:se] - clim[st:se]
+        tht = thsh[st:se] - clim[st:se]
+        ont = sst[max(1, st - 1)] - clim[max(1, st - 1)]
+        dnt = sst[min(lm, se + 1)] - clim[min(lm, se + 1)]
     end
     return ant, tht, ont, dnt
 end
@@ -469,7 +466,6 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     for bl in (outemp, outhsh, outcat)
         bl[nCIx, :] .= NaN
     end
-    # return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
     return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
@@ -480,18 +476,16 @@ function anomsa(m::MExtreme{Vector{T}}, evst, indices)
     outemp, outhsh, outcat = ntuple(_ -> Vector{T}(undef, lm), 3)
     onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
     for (d, (st, se)) in enumerate(zip(mst, mse))
-        atod = _anomsa(m.wdtype, m.temp, m.clim, m.thresh, st, se, lm)
+        atod = anomsa(m, st, en, ls)
         outemp[st:se] = atod.anom
         outhsh[st:se] = atod.threshanom
-            cats = categorys(atod)
-            outcat[CIx[c], st:se] .= cats
-            catso[c][d] = cats
+        cats = categorys(atod)
+        outcat[CIx[c], st:se] .= cats
+        catso[c][d] = cats
         onsan[c][d] = _onset(atod, st)
         decan[c][d] = _decline(atod, se, lm)
         means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
     end
-    # if using mutable struct, we can also wrap outemp, outhsh, outcat
-    # return outemp, outhsh, outcat, Events(means, maxes, onsan, decan, durs, cums, catso, m.edtype)
     return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
