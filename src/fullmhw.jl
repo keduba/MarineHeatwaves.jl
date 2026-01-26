@@ -489,7 +489,7 @@ function anomsa(m::MExtreme{Vector{T}}, evst, indices)
     return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
-_categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd))) 
+_categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd)))
 
 categorys(a::MWrapper) = _categorys(a.anom, a.threshanom)
 
@@ -548,7 +548,7 @@ function meanmetrics2(ev::MEvents{Vector{Vector{T}}}, indices, mdate)
     outmean
 end
 
-function meanmetrics(ev::MEvents{Vector{T}}, mdate)
+function meanmetrics(ev::MEvents{Vector{T}}, indices, mdate)
     # Vector version
     lfy = (length ∘ unique)(year.(mdate))
     z = 8 #length(metrics)
@@ -663,6 +663,7 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue 
 end
 
+# Favour the 3-D array
 function trend2(outannual::NTuple{N, Array{T, 3}}, indices) where N
     CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
@@ -690,7 +691,7 @@ function trend2(outannual::NTuple{N, Array{T, 3}}, indices) where N
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue 
 end
 
-# Vectorversion Output: each metric is a tuple of vectors
+# Vector version Output: each metric is a tuple of vectors
 function trend(outannual::NTuple{N, Vector{T}}, indices) where N
     X = 1:size(first(outannual), 1)
     z = length(outannual)
@@ -753,12 +754,12 @@ function _pvalue(olg::NTuple{N, <:AbstractFloat}) where N
     # Calculate T-Distribution p-value
     t_stat = b / sigma_b
     p_value_t = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
-    
+
     return p_value_f, p_value_t
 end
 
 ####
-# Interfaces 
+# Interfaces
 ####
 for f in (:pvalues, :coeffs, :rsquared)
     @eval begin
@@ -787,11 +788,11 @@ function mymetric(ev::EventsFull)
     [reduce(vcat, getfield(ev, t)) for t in vps]
 end
 
-    # I think you could stack it outside as in stack(mymetric(ev)) as (stack ∘ mymetrics)(ev)
  
 # NOTE: We should also return the start and end dates 
 # TODO: Return the anomalies and categories
-# Change MEvents to EventsFull mostly globally
+# Change MEvents to EventsFull mostly globally: DONE
+
 function mymetric(ev::EventsFull, indices)
     ids = mymetric(ev)
     cix = getindex(indices, 1)
@@ -823,8 +824,8 @@ function mymetric(mm::MHCMetrics, field, metric)
     idx = get(metrics, metric, metric)
     <:(typeof(idx), Integer) || throw(KeyError(idx))
     means = getfield(mm, field)
-    outm = ndims(means) == 1 || isa(means, NTuple) ? getindex(means, idx) : getindex(means, :,:,idx)
-    return outm 
+    outm = ndims(means) == 1 || isa(means, NTuple) ? getindex(means, idx) : getindex(means, :, :, idx)
+    return outm
 end
 
 """
@@ -844,7 +845,7 @@ end
 """
     Return the Events and the labels (starts and end positions) of the event.
 """
-function mevents(ms, mindur, maxgap, indices)
+function mevents(ms::MExtreme, mindur::Integer, maxgap::Integer, indices)
     mindur, maxgap = convert(Vector{TI}, [mindur, maxgap])
     evst = _mylabel(ms, mindur, maxgap)
     ev = anomsa(ms, evst, indices)
@@ -854,12 +855,15 @@ end
 """
     Return the computed metrics - means, annuals and linear regression outputs as MHCMetrics.
 """
-function mmetrics(ev, evst, indices, mdate)
-    mm = meanmetrics2(ev::EventsFull{Vector{Vector{T}}}, indices, mdate)
-    am = annualmetrics(ev::EventsFull{Vector{Vector{T}}}, indices, mdate, evst)
+function mmetrics(ev::EventsFull, evst, indices, mdate)
+    # TODO: benchmark trend and trend2, meanmetrics and meanmetrics2
+    mm = meanmetrics2(ev, indices, mdate)
+    # mm = meanmetrics(ev, indices, mdate)
+    am = annualmetrics(ev, indices, mdate, evst)
     M = length(am)
     N = ndims(mm)
-    tr = trend2(am::NTuple{M, Array{T, N}}, indices)
+    tr = trend2(am, indices)
+    # tr = trend(am, indices)
     MHCMetrics{T, M, N, typeof(mm)}(am, mm, tr...)
 end
 
