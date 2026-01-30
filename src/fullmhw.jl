@@ -17,8 +17,6 @@ const metrics = Dict(:means => 1,
                      :decline => 8,
                      :categorys => 9)
 
-const events = Dict(:mhw => (MHW, 0.9),
-                    :mcs => (MCS, 0.1))
 
 # The Abstract types
 
@@ -65,6 +63,8 @@ function MHW(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
     MHW(temp, clim, thresh, exc, EventHW)
 end
 
+const events = Dict(:mhw => (MHW, 0.9),
+                    :mcs => (MCS, 0.1))
 
 # Internal structs
 
@@ -324,7 +324,7 @@ end
     Return the start and end positions  and pixel columns where MExtremes were detected.
 
 """
-function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
+function mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     sty = excess(ms)
     stb = sparse(diff(sty, dims=1))
     cstt = Vector{Vector{TI}}(undef,  size(sty, 2))
@@ -357,7 +357,7 @@ function _mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     cstt, csee, cols
 end
 
-function _mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI) 
+function mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI) 
     sty = excess(ms)
     stb = sparse(diff(sty))
     cst = TI[] 
@@ -392,31 +392,12 @@ function _anomsa(sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::T
     return ant, tht, ont, dnt
 end
 
-function anomsa(m::MHW{Matrix{T}}, c, st, en, ls) 
-    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, en, ls)
-    return MHWrapper(outs...)
-end
-
-function anomsa(m::MCS{Matrix{T}}, c, st, en, ls) 
-    outs = _anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, en, ls)
-    return MCWrapper(outs...)
-end
-
-function anomsa(m::MCS{Vector{T}}, st, en, ls) 
-    outs = _anomsa(m.temp, m.clim, m.thresh, st, en, ls)
-    return MCWrapper(outs...)
-end
-
-function anomsa(m::MHW{Vector{T}}, st, en, ls) 
-    outs = _anomsa(m.temp, m.clim, m.thresh, st, en, ls)
-    return MHWrapper(outs...)
-end
 
 """
     Return the rate of onset for each event.
 
 """
-function _onset(atod::MWrapper, mst)
+function onset(atod::MWrapper, mst)
     fan = first(atod) 
     nmx = mhcsminimax(atod) 
     ngx = mhcsarg(atod) 
@@ -429,7 +410,7 @@ end
     Return the rate of decline for each event.
 
 """
-function _decline(atod::MWrapper, mse, lnx)
+function decline(atod::MWrapper, mse, lnx)
     lan = last(atod)
     nmx = mhcsminimax(atod) 
     ngx = mhcsarg(atod) 
@@ -443,7 +424,8 @@ end
     Compute the anomaly of the events in each pixel and return the Event.
 
 """
-function anomsa(m::MExtreme{Matrix{T}}, evst, indices) 
+function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
+    MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     CIx, nCIx, x, y = indices
     mst, mse, cols = evst
     lm::TI = size(m.temp, 1)
@@ -452,15 +434,15 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
-            atod = anomsa(m, c, st, se, lm)
+            atod = MW(_anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, en, ls)...)
             outemp[CIx[c], st:se] = atod.anom
             outhsh[CIx[c], st:se] = atod.threshanom
             cats = categorys(atod)
             outcat[CIx[c], st:se] .= cats
             catso[c][d] = cats
-            onsan[c][d] = _onset(atod, st)
-            decan[c][d] = _decline(atod, se, lm)
-            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
+            onsan[c][d] = onset(atod, st)
+            decan[c][d] = decline(atod, se, lm)
+            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = events(atod)
         end
     end
     for bl in (outemp, outhsh, outcat)
@@ -470,21 +452,22 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
+    MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse = evst
     lm::TI = size(m.temp, 1)
     mt::TI = 7
     outemp, outhsh, outcat = ntuple(_ -> Vector{T}(undef, lm), 3)
-    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> Vector{T}(undef,  length(mst)), mt)
+    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> Vector{T}(undef, length(mst)), mt)
     for (d, (st, se)) in enumerate(zip(mst, mse))
-        atod = anomsa(m, st, en, ls)
+        atod = MW(_anomsa(m.temp, m.clim, m.thresh, st, en, ls)...)
         outemp[st:se] = atod.anom
         outhsh[st:se] = atod.threshanom
         cats = categorys(atod)
         outcat[CIx[c], st:se] .= cats
         catso[c][d] = cats
-        onsan[c][d] = _onset(atod, st)
-        decan[c][d] = _decline(atod, se, lm)
-        means[c][d], cums[c][d], maxes[c][d], durs[c][d] = _events(atod)
+        onsan[c][d] = onset(atod, st)
+        decan[c][d] = decline(atod, se, lm)
+        means[c][d], cums[c][d], maxes[c][d], durs[c][d] = events(atod)
     end
     return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
@@ -493,7 +476,7 @@ _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd)))
 
 categorys(a::MWrapper) = _categorys(a.anom, a.threshanom)
 
-function _events(anom::MWrapper)
+function events(anom::MWrapper)
     # Per Event Metrics
     means = mean(anom)
     cums = sum(anom)
@@ -772,27 +755,33 @@ for f in (:pvalues, :coeffs, :rsquared)
     end
 end
 
-function mymetric(ev::EventsFull, metric)
-    fd = first(propertynames(ev), 7)
-    if metric in fd
-        return reduce(vcat, getfield(ev, metric))
-    else
-        throw(KeyError(metric))
-        @info "Perhaps you mean one of ", print(keys(metric))
-    end
-end
 
+"""
+    Return the Eventsfull as a vector of vectors
+
+"""
 function mymetric(ev::EventsFull)
     # Return a vector of vectors
     vps = first(propertynames(ev), 7)
     [reduce(vcat, getfield(ev, t)) for t in vps]
 end
 
+function mymetric(ev::EventsFull, metric)
+    fd = first(propertynames(ev), 7)
+    if metric in fd
+        return reduce(vcat, getfield(ev, metric))
+    else
+        throw(KeyError(metric))
+        @info "Perhaps you mean one of ", print(keys(metric)) # keys(metric)
+    end
+end
  
 # NOTE: We should also return the start and end dates 
 # TODO: Return the anomalies and categories
-# Change MEvents to EventsFull mostly globally: DONE
 
+"""
+    Return the EventsFull as a matrix that can be used as a table (or dataframe).
+"""
 function mymetric(ev::EventsFull, indices)
     ids = mymetric(ev)
     cix = getindex(indices, 1)
@@ -808,7 +797,13 @@ function mymetric(ev::EventsFull, indices)
     stack([ids..., ix, iy])
 end
 
-function mymetric(mm::MExtreme, indices, arg::Symbol)
+"""
+    Return the climatology mean and threshold as input array.
+    ma = mymetric(mm, arg, indices)
+    size(ma) == (size(mm, 2), size(mm, 1), 366)
+
+"""
+function mymetric(mm::MExtreme, arg::Symbol, indices)
     # return clim, thresh or exceedance as 3-D arrays
     # mapping the argument to the fieldnames of the mm
 
@@ -847,7 +842,7 @@ end
 """
 function mevents(ms::MExtreme, mindur::Integer, maxgap::Integer, indices)
     mindur, maxgap = convert(Vector{TI}, [mindur, maxgap])
-    evst = _mylabel(ms, mindur, maxgap)
+    evst = mylabel(ms, mindur, maxgap)
     ev = anomsa(ms, evst, indices)
     return ev, evst
 end
@@ -857,13 +852,14 @@ end
 """
 function mmetrics(ev::EventsFull, evst, indices, mdate)
     # TODO: benchmark trend and trend2, meanmetrics and meanmetrics2
-    mm = meanmetrics2(ev, indices, mdate)
+
     # mm = meanmetrics(ev, indices, mdate)
+    mm = meanmetrics2(ev, indices, mdate)
     am = annualmetrics(ev, indices, mdate, evst)
     M = length(am)
     N = ndims(mm)
-    tr = trend2(am, indices)
     # tr = trend(am, indices)
+    tr = trend2(am, indices)
     MHCMetrics{T, M, N, typeof(mm)}(am, mm, tr...)
 end
 
