@@ -185,17 +185,17 @@ function _newmets(sst, clim, thrs, lyd, mst, mse, anomfn, argfn)
     return eanoms.anom, cats, rons, rdcs
 end
 
-function _anomsnew(sst, clim, thsh, mst, mse)
-    anom = sst[mst:mse] - clim[mst:mse]
-    thsd = thsh[mst:mse] - clim[mst:mse]
-    onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
-    decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
-    return anom, onsan, decan, thsd
-end
+# function _anomsnew(sst, clim, thsh, mst, mse)
+#     anom = sst[mst:mse] - clim[mst:mse]
+#     thsd = thsh[mst:mse] - clim[mst:mse]
+#     onsan = sst[max(1, mst - 1)] - clim[max(1, mst - 1)]
+#     decan = sst[min(lastindex(sst), mse + 1)] - clim[min(lastindex(sst), mse + 1)]
+#     return anom, onsan, decan, thsd
+# end
 
-anoms(mhw::MHTemp, mst, mse) = WVH(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
+# anoms(mhw::MHTemp, mst, mse) = WVH(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
 
-anoms(mhw::MCTemp, mst, mse) = WVC(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
+# anoms(mhw::MCTemp, mst, mse) = WVC(_anomsnew(mhw.temp, mhw.clima, mhw.thresh, mst, mse))
 
 function _newmetsnew(mhw, mst, mse)
     eanoms = anoms(mhw, mst, mse)
