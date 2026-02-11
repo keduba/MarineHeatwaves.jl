@@ -95,7 +95,7 @@ struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N}
     categorys::TE
     tpanom::Array{Ti, N}
     thanom::Array{Ti, N}
-    categoryarr::Array{Ti, N}
+    # categoryarr::Array{Ti, N}
     dtype::Type{<:MEvents}
 end
 
@@ -180,7 +180,7 @@ function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     in(N, [1, 3]) || error("Expected 1 or 3 dimensions. Got $N dimensions.")
     xz = seamask(sst, N)
 
-    if N == 1 
+    if N == 1
         xz[1] || error("Please check your data. It appears to be all `NaN` or `missing`.")
     end
 
@@ -424,7 +424,7 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
     lm::TI = size(m.temp, 1)
     mt::TI = 7
     outemp, outhsh, outcat = ntuple(_ -> Array{T, 3}(undef, x, y, lm), 3)
-    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef,m) for m in length.(mst)], mt)
+    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef, m) for m in length.(mst)], mt)
     for (c, cst, cse) in zip(cols, mst, mse)
         for (d, (st, se)) in enumerate(zip(cst, cse))
             atod = MW(_anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, se, lm)...)
@@ -442,6 +442,34 @@ function anomsa(m::MExtreme{Matrix{T}}, evst, indices)
         bl[nCIx, :] .= NaN
     end
     return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
+end
+
+function anomsam(m::MExtreme{Matrix{T}}, evst) #indices)
+    MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
+    # CIx, nCIx, x, y = indices
+    mst, mse, cols = evst
+    lm::TI = size(m.temp, 1)
+    mt::TI = 7
+    outemp, outhsh = ntuple(_ -> Matrix{T}(undef, lm, length(cols)), 2)
+    outemp .= NaN; outhsh .= NaN
+    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef, m) for m in length.(mst)], mt)
+    for (c, cst, cse) in zip(cols, mst, mse)
+        for (d, (st, se)) in enumerate(zip(cst, cse))
+            atod = MW(_anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, se, lm)...)
+            outemp[st:se, c] = atod.anom
+            outhsh[st:se, c] = atod.threshanom
+            cats = categorys(atod)
+            # outcat[st:se, c] .= cats
+            catso[c][d] = cats
+            onsan[c][d] = onset(atod, st)
+            decan[c][d] = decline(atod, se, lm)
+            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = mevents(atod)
+        end
+    end
+    # for bl in (outemp, outhsh, outcat)
+    #     bl[nCIx, :] .= NaN
+    # end
+    return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
 end
 
 function anomsa(m::MExtreme{Vector{T}}, evst, indices)
@@ -465,6 +493,28 @@ function anomsa(m::MExtreme{Vector{T}}, evst, indices)
     return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, outcat, m.edtype)
 end
 
+
+function anomsav(m::MExtreme{Vector{T}}, evst)# indices)
+    MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
+    mst, mse = evst
+    lm::TI = size(m.temp, 1)
+    mt::TI = 7
+    outemp, outhsh = ntuple(_ -> Vector{T}(undef, lm), 2)
+    outemp .= NaN; outhsh .= NaN
+    onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> Vector{T}(undef, length(mst)), mt)
+    for (d, (st, se)) in enumerate(zip(mst, mse))
+        atod = MW(_anomsa(m.temp, m.clim, m.thresh, st, se, lm)...)
+        outemp[st:se] = atod.anom
+        outhsh[st:se] = atod.threshanom
+        cats = categorys(atod)
+        # outcat[st:se] .= cats
+        catso[d] = cats
+        onsan[d] = onset(atod, st)
+        decan[d] = decline(atod, se, lm)
+        means[d], cums[d], maxes[d], durs[d] = mevents(atod)
+    end
+    return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
+end
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd)))
 
 categorys(a::MWrapper) = _categorys(a.anom, a.threshanom)
@@ -495,9 +545,29 @@ function meanmetrics(ev::EventsFull{Vector{Vector{T}}}, indices, mdate)
         outmean[CIx, idx]  = mean.(getfield(ev, fm))
     end
     E = ev.dtype
-    outmean[CIx, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes)) 
+    outmean[CIx, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
     outmean[CIx, metrics[:frequency]] = @. length(ev.duration) / lfy
-    outmean[CIx, metrics[:days]] = @. sum(ev.duration) / lfy 
+    outmean[CIx, metrics[:days]] = @. sum(ev.duration) / lfy
+    outmean
+end
+
+function meanmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate)
+    # CIx, nCIx, x, y = indices
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    y = length(getfield(ev, :means))
+    # outmean = Array{T, 3}(undef, x, y, z)
+    outmean = Matrix{T}(undef, y, z)
+    # outmean[nCIx, :] .= T(NaN)
+    # check the metrics dictionary to ensure order of variables
+    for fm in (:means, :sums, :onset, :decline, :duration)
+        idx = metrics[fm]
+        outmean[:, idx]  = mean.(getfield(ev, fm))
+    end
+    E = ev.dtype
+    outmean[:, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
+    outmean[:, metrics[:frequency]] = @. length(ev.duration)/lfy
+    outmean[:, metrics[:days]] = @. sum(ev.duration)/lfy
     outmean
 end
 
@@ -512,9 +582,26 @@ function meanmetrics(ev::EventsFull{Vector{T}}, indices, mdate)
         outmean[idx]  = mean(getfield(ev, fm))
     end
     E = ev.dtype
-    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes)) 
-    outmean[metrics[:frequency]] = length(ev.duration) / lfy
-    outmean[metrics[:days]] = sum(ev.duration) / lfy 
+    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
+    outmean[metrics[:frequency]] = length(ev.duration)/lfy
+    outmean[metrics[:days]] = sum(ev.duration)/lfy
+    outmean
+end
+
+function meanmetricsv(ev::EventsFull{Vector{T}}, mdate)
+    # Vector version
+    lfy = (length ∘ unique)(year.(mdate))
+    z = length(metrics)
+    outmean = Vector{T}(undef, z)
+    # check the metrics dictionary to ensure order of variables
+    for fm in (:means, :sums, :onset, :decline, :duration)
+        idx = metrics[fm]
+        outmean[idx]  = mean(getfield(ev, fm))
+    end
+    E = ev.dtype
+    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
+    outmean[metrics[:frequency]] = length(ev.duration)/lfy
+    outmean[metrics[:days]] = sum(ev.duration)/lfy
     outmean
 end
 
@@ -537,7 +624,7 @@ function annualmetrics(ev::EventsFull{Vector{Vector{T}}}, indices, mdate, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     _, _, cols = evst
     lfy = (length ∘ unique)(year.(mdate))
-    CIx, nCIx, x, y = indices
+    # CIx, nCIx, x, y = indices
     z = length(metrics)
     E = ev.dtype
     outannual = ntuple(_ -> Array{T, 3}(undef, x, y, lfy), z)
@@ -562,8 +649,40 @@ function annualmetrics(ev::EventsFull{Vector{Vector{T}}}, indices, mdate, evst)
     outannual
 end
 
+"""
+    Compute the metrics for each year in the desired period.
+"""
+function annualmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate, evst)
+    mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
+    _, _, cols = evst
+    lfy = (length ∘ unique)(year.(mdate))
+    # CIx, nCIx, x, y = indices
+    y = length(getfield(ev, :means))
+    z = length(metrics)
+    E = ev.dtype
+    outannual = Array{T, 3}(undef, lfy, y, z)
+    # outannual = Array{T, 3}(undef, y, lfy, z)
+    for (h, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
+        for (i, yr) in zip(mz, my)
+            yx = findall(yr .== mt)
+            if isempty(yx)
+                yx = findall(yr .== me)
+            end
+            for fm in (:means, :sums, :onset, :decline, :duration)
+                idx = metrics[fm]
+                # outannual[idx][cx, i]  = mean(getfield(ev, fm)[h][yx])
+                outannual[i,h,idx]  = mean(getfield(ev, fm)[h][yx])
+            end
+            outannual[i, h, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes[h][yx]))
+            outannual[i, h, metrics[:frequency]] = convert(T, length(yx))
+            outannual[i, h, metrics[:days]] = convert(T, length(ev.duration[h][yx]))
+        end
+    end
+    outannual
+end
+
 # vector version
-function annualmetrics(ev::EventsFull{Vector{T}}, indices, mdate, evst)
+function annualmetrics(ev::EventsFull{Vector{T}}, mdate, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -587,10 +706,65 @@ function annualmetrics(ev::EventsFull{Vector{T}}, indices, mdate, evst)
     outannual
 end
 
+# vector version
+function annualmetricsv(ev::EventsFull{Vector{T}}, mdate, evst)
+    mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
+    lfy = (length ∘ unique)(year.(mdate))
+    z =  length(metrics)
+    E = ev.dtype
+    # outannual = ntuple(_ -> Vector{T}(undef, lfy), z)
+    outannual = Matrix{T}(undef, lfy, z)
+    for (mz, my, mt, me) in zip(mapcste, mapyr, mapyst, mapyse)
+        for (i, yr) in zip(mz, my)
+            yx = findall(yr .== mt)
+            if isempty(yx)
+                yx = findall(yr .== me)
+            end
+            for fm in (:means, :sums, :onset, :decline, :duration)
+                idx = metrics[fm]
+                outannual[i, idx]  = mean(getfield(ev, fm)[yx])
+            end
+            outannual[i, metrics[:maxes]] = mhcsminimax(E(getfield(ev, :minimaxes)[yx]))
+            outannual[i, metrics[:frequency]] = convert(T, length(yx))
+            outannual[i, metrics[:days]] = length(getfield(ev, :duration)[yx])
+        end
+    end
+    outannual
+end
+
+
 
 # Favour the 3-D array
 function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
     CIx, nCIx, x, y = indices
+    X = 1:size(first(outannual), 3)
+    z = length(outannual)
+    outpvalue = Array{T, 3}(undef, x, y, z)
+    outcoeff = similar(outpvalue)
+    outrsqd = similar(outpvalue)
+    outerror_coeff = similar(outpvalue)
+    outintercept = similar(outpvalue)
+    for i in 1:z
+        for ci in CIx
+            outlg = linreg(X, outannual[i][ci,:])
+            outpvalue[ci, i], _ = _pvalue(outlg)
+            outcoeff[ci, i] = getindex(outlg, 1)
+            outintercept[ci, i] = getindex(outlg, 2)
+            outrsqd[ci, i] = getindex(outlg, 3)
+            outerror_coeff[ci, i] = getindex(outlg, 4)
+        end
+        outcoeff[nCIx, i] .= T(NaN)
+        outpvalue[nCIx, i] .= T(NaN)
+        outrsqd[nCIx, i] .= T(NaN)
+        outerror_coeff[nCIx, i] .= T(NaN)
+        outintercept[nCIx, i] .= T(NaN)
+    end
+    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue
+end
+
+# Favour the 3-D array
+function trend(outannual::Array{T, 3}) where N
+    # CIx, nCIx, x, y = indices
     X = 1:size(first(outannual), 3)
     z = length(outannual)
     outpvalue = Array{T, 3}(undef, x, y, z)
