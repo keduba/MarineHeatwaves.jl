@@ -660,6 +660,7 @@ function annualmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate, evst)
     y = length(getfield(ev, :means))
     z = length(metrics)
     E = ev.dtype
+    # no of years * no of pixels * no of metrics
     outannual = Array{T, 3}(undef, lfy, y, z)
     # outannual = Array{T, 3}(undef, y, lfy, z)
     for (h, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
@@ -713,6 +714,7 @@ function annualmetricsv(ev::EventsFull{Vector{T}}, mdate, evst)
     z =  length(metrics)
     E = ev.dtype
     # outannual = ntuple(_ -> Vector{T}(undef, lfy), z)
+    # no of years * no of metrics
     outannual = Matrix{T}(undef, lfy, z)
     for (mz, my, mt, me) in zip(mapcste, mapyr, mapyst, mapyse)
         for (i, yr) in zip(mz, my)
@@ -731,8 +733,6 @@ function annualmetricsv(ev::EventsFull{Vector{T}}, mdate, evst)
     end
     outannual
 end
-
-
 
 # Favour the 3-D array
 function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
@@ -762,45 +762,47 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue
 end
 
-# Favour the 3-D array
-function trend(outannual::Array{T, 3}) where N
+function trendm(outannual::Array{T, 3})# where N
     # CIx, nCIx, x, y = indices
-    X = 1:size(first(outannual), 3)
-    z = length(outannual)
-    outpvalue = Array{T, 3}(undef, x, y, z)
+    X = 1:size(outannual, 1)
+    z = length(metrics)
+    # outpvalue = Array{T, 3}(undef, x, y, z)
+    sz = Base.tail(size(outannual))
+    outpvalue = Matrix{T}(undef, sz) #, z)
     outcoeff = similar(outpvalue)
     outrsqd = similar(outpvalue)
     outerror_coeff = similar(outpvalue)
     outintercept = similar(outpvalue)
-    for i in 1:z
-        for ci in CIx
-            outlg = linreg(X, outannual[i][ci,:])
-            outpvalue[ci, i], _ = _pvalue(outlg)
-            outcoeff[ci, i] = getindex(outlg, 1)
-            outintercept[ci, i] = getindex(outlg, 2)
-            outrsqd[ci, i] = getindex(outlg, 3)
-            outerror_coeff[ci, i] = getindex(outlg, 4)
+    for j in axes(outannual, 3)
+        for i in axes(outannual, 2)
+            outlg = linreg(X, outannual[:, i, j])
+            # outlg = linreg(X, outannual[i][ci,:])
+            outpvalue[i, j], _ = _pvalue(outlg)
+            outcoeff[i, j] = getindex(outlg, 1)
+            outintercept[i, j] = getindex(outlg, 2)
+            outrsqd[i, j] = getindex(outlg, 3)
+            outerror_coeff[i, j] = getindex(outlg, 4)
         end
-        outcoeff[nCIx, i] .= T(NaN)
-        outpvalue[nCIx, i] .= T(NaN)
-        outrsqd[nCIx, i] .= T(NaN)
-        outerror_coeff[nCIx, i] .= T(NaN)
-        outintercept[nCIx, i] .= T(NaN)
+        # outcoeff[nCIx, i] .= T(NaN)
+        # outpvalue[nCIx, i] .= T(NaN)
+        # outrsqd[nCIx, i] .= T(NaN)
+        # outerror_coeff[nCIx, i] .= T(NaN)
+        # outintercept[nCIx, i] .= T(NaN)
     end
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue
 end
 
 # Vector version Output: each metric is a tuple of vectors
-function trend(outannual::NTuple{N, Vector{T}}, indices) where N
-    X = 1:size(first(outannual), 1)
-    z = length(outannual)
+function trendv(outannual::Matrix{T})# where N
+    X = 1:size(outannual, 1)
+    z = length(metrics)
     outpvalue = Vector{T}(undef, z)
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
     outintercept = Vector{T}(undef, z)
     outerror_coeff = Vector{T}(undef, z)
-    for i in 1:z
-        outlg = linreg(X, outannual[i])
+    for i in axes(outannual, 2)
+        outlg = linreg(X, outannual[:, i])
         outpvalue[i], _ = _pvalue(outlg)
         outcoeff[i] = getindex(outlg, 1)
         outintercept[i] = getindex(outlg, 2)
