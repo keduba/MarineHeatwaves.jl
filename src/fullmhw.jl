@@ -762,11 +762,9 @@ function trend(outannual::NTuple{N, Array{T, 3}}, indices) where N
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue
 end
 
-function trendm(outannual::Array{T, 3})# where N
-    # CIx, nCIx, x, y = indices
+function trendm(outannual::Array{T, 3})
     X = 1:size(outannual, 1)
     z = length(metrics)
-    # outpvalue = Array{T, 3}(undef, x, y, z)
     sz = Base.tail(size(outannual))
     outpvalue = Matrix{T}(undef, sz) #, z)
     outcoeff = similar(outpvalue)
@@ -776,7 +774,6 @@ function trendm(outannual::Array{T, 3})# where N
     for j in axes(outannual, 3)
         for i in axes(outannual, 2)
             outlg = linreg(X, outannual[:, i, j])
-            # outlg = linreg(X, outannual[i][ci,:])
             outpvalue[i, j], _ = _pvalue(outlg)
             outcoeff[i, j] = getindex(outlg, 1)
             outintercept[i, j] = getindex(outlg, 2)
