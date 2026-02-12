@@ -558,7 +558,7 @@ function meanmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate)
     y = length(getfield(ev, :means))
     # outmean = Array{T, 3}(undef, x, y, z)
     outmean = Matrix{T}(undef, y, z)
-    # outmean[nCIx, :] .= T(NaN)
+    outmean .= NaN
     # check the metrics dictionary to ensure order of variables
     for fm in (:means, :sums, :onset, :decline, :duration)
         idx = metrics[fm]
@@ -662,6 +662,7 @@ function annualmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate, evst)
     E = ev.dtype
     # no of years * no of pixels * no of metrics
     outannual = Array{T, 3}(undef, lfy, y, z)
+    outannual .= NaN
     # outannual = Array{T, 3}(undef, y, lfy, z)
     for (h, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
         for (i, yr) in zip(mz, my)
@@ -716,6 +717,7 @@ function annualmetricsv(ev::EventsFull{Vector{T}}, mdate, evst)
     # outannual = ntuple(_ -> Vector{T}(undef, lfy), z)
     # no of years * no of metrics
     outannual = Matrix{T}(undef, lfy, z)
+    outannual .= NaN
     for (mz, my, mt, me) in zip(mapcste, mapyr, mapyst, mapyse)
         for (i, yr) in zip(mz, my)
             yx = findall(yr .== mt)
@@ -766,7 +768,8 @@ function trendm(outannual::Array{T, 3})
     X = 1:size(outannual, 1)
     z = length(metrics)
     sz = Base.tail(size(outannual))
-    outpvalue = Matrix{T}(undef, sz) #, z)
+    outpvalue = Matrix{T}(undef, sz)
+    outpvalue .= NaN
     outcoeff = similar(outpvalue)
     outrsqd = similar(outpvalue)
     outerror_coeff = similar(outpvalue)
@@ -780,20 +783,16 @@ function trendm(outannual::Array{T, 3})
             outrsqd[i, j] = getindex(outlg, 3)
             outerror_coeff[i, j] = getindex(outlg, 4)
         end
-        # outcoeff[nCIx, i] .= T(NaN)
-        # outpvalue[nCIx, i] .= T(NaN)
-        # outrsqd[nCIx, i] .= T(NaN)
-        # outerror_coeff[nCIx, i] .= T(NaN)
-        # outintercept[nCIx, i] .= T(NaN)
     end
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue
 end
 
 # Vector version Output: each metric is a tuple of vectors
-function trendv(outannual::Matrix{T})# where N
+function trendv(outannual::Matrix{T})
     X = 1:size(outannual, 1)
     z = length(metrics)
     outpvalue = Vector{T}(undef, z)
+    outpvalue .= NaN
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
     outintercept = Vector{T}(undef, z)
@@ -976,12 +975,10 @@ function mmetrics(ev::EventsFull, evst, indices, mdate)
     # TODO: benchmark trend and trend2, meanmetrics and meanmetrics2
 
     mm = meanmetrics(ev, indices, mdate)
-    # mm = meanmetrics2(ev, indices, mdate)
     am = annualmetrics(ev, indices, mdate, evst)
     M = length(am)
     N = ndims(mm)
     tr = trend(am, indices)
-    # tr = trend2(am, indices)
     MHCMetrics{T, M, N, typeof(mm)}(am, mm, tr...)
 end
 
@@ -993,4 +990,4 @@ end
     # 3. pixel, annual and trend
     mht = mmetrics(ev, lb, indices, mdate)
 =#
-export seamask, timeindices, _subtemp, MHW, MCS, EventHW, EventCS, anomsa
+export seamask, timeindices, _subtemp, MHW, MCS, EventHW, EventCS, anomsa, EventsFull, trendm

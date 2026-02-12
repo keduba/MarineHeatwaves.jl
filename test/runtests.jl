@@ -7,7 +7,8 @@ using Statistics
     # Write your tests here.
     # include("test_times.jl")
     # include("test_arraysin.jl")
-    include("test_labels.jl")
+    # include("test_labels.jl")
+    include("test_metrics.jl")
 end
 
 @testset "Full Tests" begin

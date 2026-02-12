@@ -39,3 +39,4 @@ end
     length(ahoy.means) == length(cols)
     size(ahoy.tpanom) == (size(ms, 1), length(cols))
 end
+
