@@ -918,12 +918,12 @@ end
     size(ma) == (size(mm, 2), size(mm, 1), 366)
 
 """
-function mymetric(mm::MExtreme, arg::Symbol, indices)
+function mymetric(mm::MExtreme, field::Symbol, indices)
     # return clim, thresh or exceedance as 3-D arrays
     # mapping the argument to the fieldnames of the mm
-    arg in fieldnames(typeof(mm)) || throw(error(arg, " not a valid option. Try any of `:clim`, `:thresh`, `:exceeds`")) # NOTE: annual, tempanom, threshanom too!
+    field in fieldnames(typeof(mm)) || throw(error(field, " not a valid option. Try any of `:clim`, `:thresh`, `:exceeds`")) # NOTE: annual, tempanom, threshanom too!
 
-    gh = getfield(mm, arg)
+    gh = getfield(mm, field)
 
     # NOTE: for clim and threshold, should we return 366 or leave it to the user?
     return _outarrays(gh, indices)
@@ -936,6 +936,10 @@ function mymetric(mm::MHCMetrics, field::Symbol, metric::Symbol)
     means = getfield(mm, field)
     outm = isa(means, NTuple) || ndims(means) == 1 ? getindex(means, idx) : getindex(means, :, :, idx)
     return outm
+end
+
+function mymetricm(mm::MHCMetrics, field::Symbol, metric::Symbol)
+    return nothing
 end
 
 """
@@ -955,18 +959,41 @@ end
 
 """
     Helper to return part Matrix as full Matrix in original data dimensions.
+    For trend results one trend at a time.
 """
-function _outarrays(gg::Matrix{T}, indices::Tuple, metric)
+function _outarrays(gg::Matrix{T}, indices::Tuple, metric::SymOrString)
+    # metric could be a single or a tuple of metrics NTuple{N, SymOrString}
     CIx, nCIx, x, y = indices
-    metric in metrics 
-    # Each column in gg is a pixel, and each row is a date.
-    oclim = Matrix{T}(undef, x, y)
-    for (col, cx) in enumerate(CIx)
+    # first for a single metric
+    if metric isa SymOrString
+        metric in keys(metrics) || throw(KeyError(metric))
+        mt = getindex(metrics, metric)
+        # Each column in gg is a pixel, and each row is a date.
+        oclim = Matrix{T}(undef, x, y)
+        for (col, cx) in enumerate(CIx)
         oclim[cx] = gg[col, mt]
+        end
+        oclim[nCIx, :] .= NaN
+        return oclim
+    else # metric is a tuple
+        idx = []
+        for mt in metric
+            mt in keys(metrics) || throw(KeyError(mt))
+            push!(idx, getindex(metrics, mt))
+        end
+        LM = length(metric)
+        @assert LM == length(idx)
+        outs = ntuple(_ -> Matrix{T}(undef, x, y), LM)
+        for i in 1:LM
+            for (col, cx) in enumerate(CIx)
+                outs[i][cx] = getindex(gg, col, getindex(idx, i))
+            end
+            outs[i][nCIx] .= NaN
+        end
+        return outs
     end
-    oclim[nCIx, :] .= NaN
-    oclim
 end
+
 """
     Return the Events and the labels (starts and end positions) of the event.
 """
