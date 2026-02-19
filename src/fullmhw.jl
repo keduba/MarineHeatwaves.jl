@@ -938,8 +938,45 @@ function mymetric(mm::MHCMetrics, field::Symbol, metric::Symbol)
     return outm
 end
 
-function mymetricm(mm::MHCMetrics, field::Symbol, metric::Symbol)
-    return nothing
+function mymetricm(mm::MHCMetrics,
+                   field::SymOrString,
+                   metric::Union{SymOrString, NTuple{N, SymOrString}},
+                   indices) where {N}
+    # one for annuals as a matrix
+    field in propertynames(mm) || throw(KeyError(field))
+    gg = getfield(mm, field)
+    CIx, nCIx, x, y = indices
+        # first for a single metric
+    if metric isa SymOrString
+        metric in keys(metrics) || throw(KeyError(metric))
+        idx = getindex(metrics, metric)
+        if field == :annuals
+            gg = getindex(gg, :, :, idx)
+            return _outarrays(gg, indices)
+        end
+        outs = Matrix{T}(undef, x, y)
+        for (row, cx) in enumerate(CIx)
+            outs[cx] = gg[row, mt]
+        end
+        outs[nCIx] .= NaN
+        return outs
+    else # metric is a tuple
+        idx = TI[]
+        for mt in metric
+            mt in keys(metrics) || throw(KeyError(mt))
+            push!(idx, getindex(metrics, mt))
+        end
+        M = length(metric)
+        @assert M == length(idx)
+        outs = ntuple(_ -> Matrix{T}(undef, x, y), M)
+        for i in 1:M
+            for (row, cx) in enumerate(CIx)
+                outs[i][cx] = getindex(gg, row, getindex(idx, i))
+            end
+            outs[i][nCIx] .= NaN
+        end
+        return outs
+    end
 end
 
 """
@@ -957,42 +994,42 @@ function _outarrays(gg::Union{Matrix{T}, BitMatrix}, indices::Tuple)
 end
 
 
-"""
-    Helper to return part Matrix as full Matrix in original data dimensions.
-    For trend results one trend at a time.
-"""
-function _outarrays(gg::Matrix{T}, indices::Tuple, metric::SymOrString)
-    # metric could be a single or a tuple of metrics NTuple{N, SymOrString}
-    CIx, nCIx, x, y = indices
-    # first for a single metric
-    if metric isa SymOrString
-        metric in keys(metrics) || throw(KeyError(metric))
-        mt = getindex(metrics, metric)
-        # Each column in gg is a pixel, and each row is a date.
-        oclim = Matrix{T}(undef, x, y)
-        for (col, cx) in enumerate(CIx)
-        oclim[cx] = gg[col, mt]
-        end
-        oclim[nCIx, :] .= NaN
-        return oclim
-    else # metric is a tuple
-        idx = []
-        for mt in metric
-            mt in keys(metrics) || throw(KeyError(mt))
-            push!(idx, getindex(metrics, mt))
-        end
-        LM = length(metric)
-        @assert LM == length(idx)
-        outs = ntuple(_ -> Matrix{T}(undef, x, y), LM)
-        for i in 1:LM
-            for (col, cx) in enumerate(CIx)
-                outs[i][cx] = getindex(gg, col, getindex(idx, i))
-            end
-            outs[i][nCIx] .= NaN
-        end
-        return outs
-    end
-end
+# """
+#     Helper to return part Matrix as full Matrix in original data dimensions.
+#     For trend results one trend at a time.
+# """
+# function _outarrays(gg::Matrix{T}, metric::SymOrString, indices::Tuple)
+#     # metric could be a single or a tuple of metrics NTuple{N, SymOrString}
+#     CIx, nCIx, x, y = indices
+#     # first for a single metric
+#     if metric isa SymOrString
+#         metric in keys(metrics) || throw(KeyError(metric))
+#         mt = getindex(metrics, metric)
+#         # Each column in gg is a pixel, and each row is a date.
+#         oclim = Matrix{T}(undef, x, y)
+#         for (col, cx) in enumerate(CIx)
+#         oclim[cx] = gg[col, mt]
+#         end
+#         oclim[nCIx, :] .= NaN
+#         return oclim
+#     else # metric is a tuple
+#         idx = []
+#         for mt in metric
+#             mt in keys(metrics) || throw(KeyError(mt))
+#             push!(idx, getindex(metrics, mt))
+#         end
+#         LM = length(metric)
+#         @assert LM == length(idx)
+#         outs = ntuple(_ -> Matrix{T}(undef, x, y), LM)
+#         for i in 1:LM
+#             for (col, cx) in enumerate(CIx)
+#                 outs[i][cx] = getindex(gg, col, getindex(idx, i))
+#             end
+#             outs[i][nCIx] .= NaN
+#         end
+#         return outs
+#     end
+# end
 
 """
     Return the Events and the labels (starts and end positions) of the event.
