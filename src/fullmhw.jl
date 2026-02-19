@@ -111,6 +111,16 @@ struct MHCMetrics{T<:AbstractFloat, Nm, N, TD<:AbstractArray{T, N}}
     pvalues::TD
 end
 
+struct MHCMetricsm{TA, TV}
+    annuals::TA
+    means::TV
+    coeffs::TV
+    errors::TV
+    rsquared::TV
+    intercepts::TV
+    pvalues::TV
+end
+
 struct MHWCSO{T<:AbstractArray{<:AbstractFloat}}
     # outtempanom::T
     # outcats::T
@@ -646,7 +656,7 @@ end
 """
     Compute the metrics for each year in the desired period.
 """
-function annualmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate::StepRange{Date, Day}, evst)
+function annualmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate::StepRange{Date, Day}, evst::Tuple)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     _, _, cols = evst
     lfy = (length ∘ unique)(year.(mdate))
@@ -915,7 +925,7 @@ end
 """
     Return the climatology mean and threshold as input array.
     ma = mymetric(mm, arg, indices)
-    size(ma) == (size(mm, 2), size(mm, 1), 366)
+    size(ma) == (indices[3], indices[4], size(mm.clim, 1))
 
 """
 function mymetric(mm::MExtreme, field::Symbol, indices)
@@ -938,16 +948,19 @@ function mymetric(mm::MHCMetrics, field::Symbol, metric::Symbol)
     return outm
 end
 
-function mymetricm(mm::MHCMetrics,
+function mymetricm(mm::MHCMetricsm,
                    field::SymOrString,
                    metric::Union{SymOrString, NTuple{N, SymOrString}},
                    indices) where {N}
     # one for annuals as a matrix
+
+    field = typeof(field) == String ? Symbol(field) : field
     field in propertynames(mm) || throw(KeyError(field))
     gg = getfield(mm, field)
     CIx, nCIx, x, y = indices
         # first for a single metric
     if metric isa SymOrString
+        metric = typeof(metric) == String ? Symbol(metric) : metric
         metric in keys(metrics) || throw(KeyError(metric))
         idx = getindex(metrics, metric)
         if field == :annuals
@@ -956,11 +969,12 @@ function mymetricm(mm::MHCMetrics,
         end
         outs = Matrix{T}(undef, x, y)
         for (row, cx) in enumerate(CIx)
-            outs[cx] = gg[row, mt]
+            outs[cx] = gg[row, idx]
         end
         outs[nCIx] .= NaN
         return outs
     else # metric is a tuple
+        metric = typeof(metric) == NTuple{N, String} ? Symbol.(metric) : metric
         idx = TI[]
         for mt in metric
             mt in keys(metrics) || throw(KeyError(mt))
@@ -968,6 +982,14 @@ function mymetricm(mm::MHCMetrics,
         end
         M = length(metric)
         @assert M == length(idx)
+        if field == :annuals
+            outs = Array{T, 3}[]
+            for i in 1:M
+                og = getindex(gg, :, :, getindex(idx, i))
+                push!(outs, _outarrays(og, indices))
+            end
+            return outs
+        end
         outs = ntuple(_ -> Matrix{T}(undef, x, y), M)
         for i in 1:M
             for (row, cx) in enumerate(CIx)
@@ -985,12 +1007,12 @@ end
 function _outarrays(gg::Union{Matrix{T}, BitMatrix}, indices::Tuple)
     CIx, nCIx, x, y = indices
     # Each column in gg is a pixel, and each row is a date.
-    oclim = Array{T, 3}(undef, x, y, size(gg, 1))
+    outs = Array{T, 3}(undef, x, y, size(gg, 1))
     for (col, cx) in enumerate(CIx)
-        oclim[cx, :] = gg[:, col]
+        outs[cx, :] = gg[:, col]
     end
-    oclim[nCIx, :] .= NaN
-    oclim
+    outs[nCIx, :] .= NaN
+    outs
 end
 
 
@@ -1062,13 +1084,13 @@ function mmetrics(ev::EventsFull, evst, indices, mdate)
     MHCMetrics{T, M, N, typeof(mm)}(am, mm, tr...)
 end
 
-function mmetricsm(ev::EventsFull, evst, indices, mdate)
+function mmetricsm(ev::EventsFull, evst, mdate, indices)
     mm = meanmetricsm(ev, mdate)
-    am = annualmetricsm(ev, indices, mdate, evst)
-    M = length(am)
+    am = annualmetricsm(ev, mdate, evst)
+    # M = length(am)
     N = ndims(mm)
-    tr = trendm(am, indices)
-    MHCMetrics{T, M, N, typeof(mm)}(am, mm, tr...)
+    tr = trendm(am)
+    MHCMetricsm{typeof(am), typeof(mm)}(am, mm, tr...)
 end
 
 #= STEPS
