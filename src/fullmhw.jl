@@ -965,12 +965,13 @@ function mymetricm(mm::MHCMetricsm,
         idx = getindex(metrics, metric)
         if field == :annuals
             gg = getindex(gg, :, :, idx)
-            return _outarrays(gg, indices)
+            outs = Array{T, 3}(undef, x, y, size(gg, 1))
+            outs[CIx, :] = permutedims(gg)
+            outs[nCIx, :] .= NaN
+            return outs
         end
         outs = Matrix{T}(undef, x, y)
-        for (row, cx) in enumerate(CIx)
-            outs[cx] = gg[row, idx]
-        end
+        outs[CIx] = gg[:, idx]
         outs[nCIx] .= NaN
         return outs
     else # metric is a tuple
@@ -983,75 +984,23 @@ function mymetricm(mm::MHCMetricsm,
         M = length(metric)
         @assert M == length(idx)
         if field == :annuals
-            outs = Array{T, 3}[]
+            outs = ntuple(_ -> Array{T, 3}(undef, x, y, size(gg, 1)), M)
             for i in 1:M
                 og = getindex(gg, :, :, getindex(idx, i))
-                push!(outs, _outarrays(og, indices))
+                outs[i][CIx, :] = permutedims(og)
+                outs[i][nCIx, :] .= NaN
             end
             return outs
         end
         outs = ntuple(_ -> Matrix{T}(undef, x, y), M)
         for i in 1:M
-            for (row, cx) in enumerate(CIx)
-                outs[i][cx] = getindex(gg, row, getindex(idx, i))
-            end
+            outs[i][CIx] = getindex(gg, :, getindex(idx, i))
             outs[i][nCIx] .= NaN
         end
         return outs
     end
 end
 
-"""
-    Helper to return Matrix as 3-D array.
-"""
-function _outarrays(gg::Union{Matrix{T}, BitMatrix}, indices::Tuple)
-    CIx, nCIx, x, y = indices
-    # Each column in gg is a pixel, and each row is a date.
-    outs = Array{T, 3}(undef, x, y, size(gg, 1))
-    for (col, cx) in enumerate(CIx)
-        outs[cx, :] = gg[:, col]
-    end
-    outs[nCIx, :] .= NaN
-    outs
-end
-
-
-# """
-#     Helper to return part Matrix as full Matrix in original data dimensions.
-#     For trend results one trend at a time.
-# """
-# function _outarrays(gg::Matrix{T}, metric::SymOrString, indices::Tuple)
-#     # metric could be a single or a tuple of metrics NTuple{N, SymOrString}
-#     CIx, nCIx, x, y = indices
-#     # first for a single metric
-#     if metric isa SymOrString
-#         metric in keys(metrics) || throw(KeyError(metric))
-#         mt = getindex(metrics, metric)
-#         # Each column in gg is a pixel, and each row is a date.
-#         oclim = Matrix{T}(undef, x, y)
-#         for (col, cx) in enumerate(CIx)
-#         oclim[cx] = gg[col, mt]
-#         end
-#         oclim[nCIx, :] .= NaN
-#         return oclim
-#     else # metric is a tuple
-#         idx = []
-#         for mt in metric
-#             mt in keys(metrics) || throw(KeyError(mt))
-#             push!(idx, getindex(metrics, mt))
-#         end
-#         LM = length(metric)
-#         @assert LM == length(idx)
-#         outs = ntuple(_ -> Matrix{T}(undef, x, y), LM)
-#         for i in 1:LM
-#             for (col, cx) in enumerate(CIx)
-#                 outs[i][cx] = getindex(gg, col, getindex(idx, i))
-#             end
-#             outs[i][nCIx] .= NaN
-#         end
-#         return outs
-#     end
-# end
 
 """
     Return the Events and the labels (starts and end positions) of the event.
