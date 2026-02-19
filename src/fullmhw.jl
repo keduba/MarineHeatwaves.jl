@@ -15,9 +15,7 @@ const metrics = Dict(:means => 1,
                      :frequency => 5,
                      :days => 6,
                      :onset => 7,
-                     :decline => 8) #,
-                     #:categorys => 9)
-
+                     :decline => 8)
 
 # The Abstract types
 
@@ -86,7 +84,7 @@ end
 # struct Events{TE} <: MEvents{TE}
 # end
 
-struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N}
+struct Events{TE<:AbstractVector, Ti<:AbstractFloat, N}
     means::TE
     minimaxes::TE
     onset::TE
@@ -96,7 +94,6 @@ struct EventsFull{TE<:AbstractVector, Ti<:AbstractFloat, N}
     categorys::TE
     tpanom::Array{Ti, N}
     thanom::Array{Ti, N}
-    # categoryarr::Array{Ti, N}
     dtype::Type{<:MEvents}
 end
 
@@ -121,21 +118,6 @@ struct MHCMetricsm{TA, TV}
     intercepts::TV
     pvalues::TV
 end
-
-struct MHWCSO{T<:AbstractArray{<:AbstractFloat}}
-    # outtempanom::T
-    # outcats::T
-    # outthreshanom::T
-    # outclim::T
-    # outhresh::T
-    # outexceeds::Array{Bool}
-    outmeans::T
-    outannuals::T
-    outpvalues::T
-    outcoeff::T
-    outrsquared::T
-end
-
 
 # Base implementations for internal structs
 
@@ -457,7 +439,7 @@ function anomsam(m::MExtreme{Matrix{T}}, evst)
             means[c][d], cums[c][d], maxes[c][d], durs[c][d] = mevents(atod)
         end
     end
-    return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
+    return Events(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
 end
 
 
@@ -480,7 +462,7 @@ function anomsav(m::MExtreme{Vector{T}}, evst)# indices)
         decan[d] = decline(atod, se, lm)
         means[d], cums[d], maxes[d], durs[d] = mevents(atod)
     end
-    return EventsFull(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
+    return Events(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
 end
 
 _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd)))
@@ -501,7 +483,7 @@ end
 """
 Return the mean of the metrics in each pixel.
 """
-function meanmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate::StepRange{Date, Day})
+function meanmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Day})
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
     y = length(getfield(ev, :means))
@@ -519,7 +501,7 @@ function meanmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate::StepRange{Date, 
 end
 
 
-function meanmetricsv(ev::EventsFull{Vector{T}}, mdate)
+function meanmetricsv(ev::Events{Vector{T}}, mdate)
     # Vector version
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
@@ -552,7 +534,7 @@ end
 """
 Compute the metrics for each year in the desired period.
 """
-function annualmetricsm(ev::EventsFull{Vector{Vector{T}}}, mdate::StepRange{Date, Day}, evst::Tuple)
+function annualmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Day}, evst::Tuple)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     _, _, cols = evst
     lfy = (length ∘ unique)(year.(mdate))
@@ -584,7 +566,7 @@ end
 
 
 # vector version
-function annualmetricsv(ev::EventsFull{Vector{T}}, mdate, evst)
+function annualmetricsv(ev::Events{Vector{T}}, mdate, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -656,36 +638,6 @@ function trendv(outannual::Matrix{T})
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue
 end
 
-function linreg(x::AbstractVector, y::AbstractVector)
-    # Alexander Barth
-    # https://github.com/Alexander-Barth
-
-
-    # remove NaNs
-    ind = .!isnan.(x) .& .!isnan.(y)
-    x = x[ind]
-    y = y[ind]
-
-    xm = mean(x)
-    xa = x .- xm
-    ym = mean(y)
-    ya = y .- ym
-
-    ssxy = xa' * ya
-    ssxx = xa' * xa
-    ssyy = ya' * ya
-
-    b = ssxy / ssxx
-    a = ym - b * xm
-    r2 = ssxy^2 / (ssxx * ssyy)
-
-    n = length(x)
-
-    sigma_e = sqrt(max((ssyy - b^2 * ssxx) / (n - 2), 0))
-    sigma_a = sigma_e * sqrt(sum(x .^ 2) / (n * ssxx))
-    sigma_b = sigma_e / sqrt(ssxx)
-    return a, b, r2, sigma_a, sigma_b, sigma_e, convert(typeof(b), n)
-end
 
 function _pvalue(olg::NTuple{N, <:AbstractFloat}) where N
     b = olg[2]
@@ -723,7 +675,7 @@ end
 Return the Eventsfull of a single pixel as a matrix
 
 """
-function mymetric(ev::EventsFull{Vector{T}})
+function mymetric(ev::Events{Vector{T}})
     # Return a vector of vectors
     vps = first(propertynames(ev), 7)
     stack([reduce(vcat, getfield(ev, t)) for t in vps])
@@ -734,7 +686,7 @@ Return all the values of the events of a given metric as a vector.
 
 mymetric(eve, "means")::Vector{T}
 """
-function mymetric(ev::EventsFull, metric::SymOrString)
+function mymetric(ev::Events, metric::SymOrString)
     #TODO: take metric as symbol or string
     metric = typeof(metric) == String ? Symbol(metric) : metric
     fd = first(propertynames(ev), 7)
@@ -750,11 +702,11 @@ end
 # TODO: Return the anomalies and categories
 
 """
-Return the EventsFull as a matrix that can be used as a table (or dataframe).
+Return the Events be used as a table (or dataframe).
 
 mymetric(evt, indices)::Matrix
 """
-function mymetric(ev::EventsFull{Vector{Vector{T}}}, indices::Tuple)
+function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple)
     vps = first(propertynames(ev), 7)
     ids = [reduce(vcat, getfield(ev, t)) for t in vps]
     cix = getindex(indices, 1)
@@ -866,7 +818,7 @@ end
 Return the computed metrics - means, annuals and linear regression outputs as MHCMetrics.
 """
 
-function mmetricsm(ev::EventsFull, evst, mdate, indices)
+function mmetricsm(ev::Events, evst, mdate, indices)
     mm = meanmetricsm(ev, mdate)
     am = annualmetricsm(ev, mdate, evst)
     tr = trendm(am)
@@ -881,4 +833,4 @@ end
     # 3. pixel, annual and trend
     mht = mmetrics(ev, lb, indices, mdate)
 =#
-export seamask, timeindices, _subtemp, MHW, MCS, EventHW, EventCS, anomsa, EventsFull, trendm
+export seamask, timeindices, _subtemp, MHW, MCS, EventHW, EventCS, anomsa, Events, trendm
