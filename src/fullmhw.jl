@@ -533,7 +533,7 @@ function annualmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Da
     # outannual = Array{T, 3}(undef, y, lfy, z)
     outannual = Array{T, 3}(undef, lfy, y, z)
     # outannual .= NaN
-    for (h, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
+    for (c, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
         for (i, yr) in zip(mz, my)
             yx = findall(yr .== mt)
             if isempty(yx)
@@ -541,11 +541,11 @@ function annualmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Da
             end
             for fm in (:means, :sums, :duration, :onset, :decline)
                 idx = metrics[fm]
-                outannual[i,h,idx]  = mean(getfield(ev, fm)[h][yx])
+                outannual[i, c, idx]  = mean(getfield(ev, fm)[c][yx])
             end
-            outannual[i, h, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes[h][yx]))
-            outannual[i, h, metrics[:frequency]] = convert(T, length(yx))
-            outannual[i, h, metrics[:days]] = convert(T, sum(ev.duration[h][yx]))
+            outannual[i, c, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes[c][yx]))
+            outannual[i, c, metrics[:frequency]] = convert(T, length(yx))
+            outannual[i, c, metrics[:days]] = convert(T, sum(ev.duration[c][yx]))
         end
     end
     outannual
@@ -586,7 +586,6 @@ function trendm(outannual::Array{T, 3})
     z = length(metrics)
     sz = Base.tail(size(outannual))
     outpvalue = Matrix{T}(undef, sz)
-    # outpvalue .= NaN # not expecting a NaN trend but just in case
     outcoeff = similar(outpvalue)
     outrsqd = similar(outpvalue)
     outerror_coeff = similar(outpvalue)
@@ -594,7 +593,7 @@ function trendm(outannual::Array{T, 3})
     for j in axes(outannual, 3)
         for i in axes(outannual, 2)
             outlg = linreg(X, outannual[:, i, j])
-            outpvalue[i, j], _ = _pvalue(outlg)
+            outpvalue[i, j] = _pvalue(outlg)
             outcoeff[i, j] = getindex(outlg, 1)
             outintercept[i, j] = getindex(outlg, 2)
             outrsqd[i, j] = getindex(outlg, 3)
@@ -609,14 +608,13 @@ function trendv(outannual::Matrix{T})
     X = 1:size(outannual, 1)
     z = length(metrics)
     outpvalue = Vector{T}(undef, z)
-    # outpvalue .= NaN
     outcoeff = Vector{T}(undef, z)
     outrsqd = Vector{T}(undef, z)
     outintercept = Vector{T}(undef, z)
     outerror_coeff = Vector{T}(undef, z)
     for i in axes(outannual, 2)
         outlg = linreg(X, outannual[:, i])
-        outpvalue[i], _ = _pvalue(outlg)
+        outpvalue[i] = _pvalue(outlg)
         outcoeff[i] = getindex(outlg, 1)
         outintercept[i] = getindex(outlg, 2)
         outrsqd[i] = getindex(outlg, 3)
@@ -639,7 +637,6 @@ function _pvalue(olg::NTuple{N, <:AbstractFloat}) where N
     # Calculate T-Distribution p-value
     t_stat = b / sigma_b
     p_value_t = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
-
     return p_value_f #, p_value_t
 end
 
@@ -657,7 +654,6 @@ for f in (:pvalues, :coeffs, :rsquared)
     end
 end
 
-
 """
 Return the Eventsfull of a single pixel as a matrix
 
@@ -674,7 +670,6 @@ Return all the values of the events of a given metric as a vector.
 mymetric(eve, "means")::Vector{T}
 """
 function mymetric(ev::Events, metric::SymOrString)
-    #TODO: take metric as symbol or string
     metric = typeof(metric) == String ? Symbol(metric) : metric
     fd = first(propertynames(ev), 7)
     if metric in fd
@@ -686,16 +681,15 @@ function mymetric(ev::Events, metric::SymOrString)
 end
  
 # NOTE: We should also return the start and end dates
-# TODO: Return the anomalies and categories
 
 """
 Return the Events be used as a table (or dataframe).
 
-mymetric(evt, indices)::Matrix
+mymetric(evt, indices, startends)::Matrix
 """
-function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple)
+function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple)
     vps = first(propertynames(ev), 7)
-    ids = [reduce(vcat, getfield(ev, t)) for t in vps]
+    evs = [reduce(vcat, getfield(ev, t)) for t in vps]
     cix = getindex(indices, 1)
     # the number of events per pixel
     drs = length.(getfield(ev, 1))
@@ -705,8 +699,10 @@ function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple)
         append!(ix, repeat([Tuple(s)[1]], q))
         append!(iy, repeat([Tuple(s)[2]], q))
     end
+    stdates = [mdate[i] for i in Iterators.flatten(evst[1]) |> collect]
+    endates = [mdate[i] for i in Iterators.flatten(evst[2]) |> collect]
     @assert length(ix) == length(iy) == sum(drs)
-    stack([ids..., ix, iy])
+    stack([evs..., stdates, endates, ix, iy])
 end
 
 
