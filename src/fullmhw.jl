@@ -20,8 +20,8 @@ const metrics = Dict(:means => 1,
 # The Abstract types
 
 abstract type MWrapper end
-abstract type MEvents{TE} end
-abstract type MExtreme{TA<:AbstractVecOrMat{<:AbstractFloat}, V<:BitArray} end
+abstract type MEvents{TE <: AbstractVector} end
+abstract type MExtreme{TA <: AbstractVecOrMat{<: AbstractFloat}, V <: BitArray} end
 
 
 # Input structs
@@ -34,7 +34,7 @@ struct EventCS{TE} <: MEvents{TE}
     maxes::TE
 end
 
-struct MCS{TA,V} <: MExtreme{TA,V}
+struct MCS{TA, V} <: MExtreme{TA, V}
     temp::TA
     clim::TA
     thresh::TA
@@ -45,10 +45,10 @@ end
 function MCS(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
     temp = convert(typeof(clim), temp)
     exc = _excess(thresh, temp)
-    MCS(temp, clim, thresh, exc, EventCS)
+    MCS{typeof(temp), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
-struct MHW{TA,V} <: MExtreme{TA,V}
+struct MHW{TA, V} <: MExtreme{TA, V}
     temp::TA
     clim::TA
     thresh::TA
@@ -59,7 +59,7 @@ end
 function MHW(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
     temp = convert(typeof(clim), temp)
     exc = _excess(temp, thresh)
-    MHW(temp, clim, thresh, exc, EventHW)
+    MHW{typeof(temp), typeof(exc)}(temp, clim, thresh, exc, EventHW)
 end
 
 const events = Dict(:mhw => (MHW, 0.9),
@@ -84,7 +84,7 @@ end
 # struct Events{TE} <: MEvents{TE}
 # end
 
-struct Events{TE<:AbstractVector, Ti<:AbstractFloat, N}
+struct Events{TE} <: MEvents{TE}#<:AbstractVector, Ti<:AbstractVecOrMat}
     means::TE
     minimaxes::TE
     onset::TE
@@ -92,22 +92,12 @@ struct Events{TE<:AbstractVector, Ti<:AbstractFloat, N}
     duration::TE
     sums::TE
     categorys::TE
-    tpanom::Array{Ti, N}
-    thanom::Array{Ti, N}
+    tpanom::VecOrMat{T}
+    thanom::VecOrMat{T}
     dtype::Type{<:MEvents}
 end
 
 # Output structs
-
-struct MHCMetrics{T<:AbstractFloat, Nm, N, TD<:AbstractArray{T, N}}
-    annuals::NTuple{Nm, TD}
-    means::TD
-    coeffs::TD
-    errors::TD
-    rsquared::TD
-    intercepts::TD
-    pvalues::TD
-end
 
 struct MHCMetricsm{TA, TV}
     annuals::TA
@@ -352,7 +342,7 @@ function mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
 end
 
 function mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
-    (mindur <= 0 || maxgap <=0) && error("The minimum duration or maximum gap cannot be less than 1.")
+    (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty))
     cst = TI[] 
@@ -418,9 +408,7 @@ end
 Compute the anomaly of the events in each pixel and return the Event.
 
 """
-
-# NOTE: What is the type of evst?
-function anomsam(m::MExtreme{Matrix{T}}, evst)
+function anomsam(m::MExtreme{Matrix{T}}, evst::Tuple)
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse, cols = evst
     lm::TI = size(m.temp, 1)
@@ -443,7 +431,7 @@ function anomsam(m::MExtreme{Matrix{T}}, evst)
 end
 
 
-function anomsav(m::MExtreme{Vector{T}}, evst)# indices)
+function anomsav(m::MExtreme{Vector{T}}, evst::Tuple)
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse = evst
     lm::TI = size(m.temp, 1)
@@ -501,7 +489,7 @@ function meanmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Day}
 end
 
 
-function meanmetricsv(ev::Events{Vector{T}}, mdate)
+function meanmetricsv(ev::Events{Vector{T}}, mdate::StepRange{Date, Day})
     # Vector version
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
@@ -556,7 +544,6 @@ function annualmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Da
                 outannual[i,h,idx]  = mean(getfield(ev, fm)[h][yx])
             end
             outannual[i, h, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes[h][yx]))
-            # NOTE: changed days function to sum rather than length
             outannual[i, h, metrics[:frequency]] = convert(T, length(yx))
             outannual[i, h, metrics[:days]] = convert(T, sum(ev.duration[h][yx]))
         end
@@ -566,7 +553,7 @@ end
 
 
 # vector version
-function annualmetricsv(ev::Events{Vector{T}}, mdate, evst)
+function annualmetricsv(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst::Tuple)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -653,7 +640,7 @@ function _pvalue(olg::NTuple{N, <:AbstractFloat}) where N
     t_stat = b / sigma_b
     p_value_t = 2 * (1 - cdf(TDist(n - 2), abs(t_stat)))
 
-    return p_value_f, p_value_t
+    return p_value_f #, p_value_t
 end
 
 ####
