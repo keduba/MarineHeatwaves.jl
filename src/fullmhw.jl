@@ -645,7 +645,7 @@ end
 ####
 for f in (:pvalues, :coeffs, :rsquared)
     @eval begin
-        function $f(am::MHCMetrics, metric)
+        function $f(am::MHCMetricsm, metric)
             idx = get(metrics, metric, metric)
             <:(typeof(idx), Integer) || throw(KeyError(idx))
             xx = getfield(am, Symbol($f))
