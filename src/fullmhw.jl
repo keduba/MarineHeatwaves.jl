@@ -1,7 +1,7 @@
 import Statistics: mean, quantile, std
 import Distributions: cdf, FDist, TDist
 using Dates
-using NCDatasets
+# using NCDatasets
 using SparseArrays
 
 const T = Float32
@@ -162,7 +162,7 @@ Calculate the subset of the input array. For n-dimensional array input where n >
 
 Return the subset and indices of mask.
 """
-function _subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
+function subtemp(sst::AbstractArray, mhwix::UnitRange, clmix::UnitRange)
     N = ndims(sst)
     N ≤ 0 && error("0-dimensional data just can't work.")
     in(N, [1, 3]) || error("Expected 1 or 3 dimensions. Got $N dimensions.")
@@ -201,7 +201,7 @@ excess(ms::MExtreme) = ms.exceeds
 Return a MExtreme (MHW or MCS).
 
 """
-function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true)
+function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true)
     in(event, keys(events)) || error("`:$event` is not a valid event. Try `:mhw` or `:mcs`")
     ME, mthreshold = get(events, event, :mhw)
     threshold = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
@@ -210,7 +210,7 @@ function mextreme(sst, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRang
     clmix = timeindices(sstdate, clmdate)
     mlyd = leapyearday.(sstdate[mhwix])
     clyd = leapyearday.(sstdate[clmix])
-    mhtemp, ctemp, CIs = _subtemp(sst, mhwix, clmix)
+    mhtemp, ctemp, CIs = subtemp(sst, mhwix, clmix)
     clima, thresh = climthresh(ctemp, clyd, mlyd, window, smoothwindow, threshold, wrap=wrap)
     return ME(mhtemp, clima, thresh), CIs
 end
@@ -268,7 +268,7 @@ function moving_means(mt::Vector, pwidth, lyd; wrap=true)
     out
 end
 
-function moving_mean(A::AbstractVector, m::TI, wrap::Bool) 
+function moving_mean(A::AbstractVector, m::TI, wrap::Bool)
     out = similar(A)
     R = LinearIndices(A)
     m2 = trunc(TI, 0.5m)
@@ -315,7 +315,7 @@ function mylabel(ms::MExtreme{Matrix{T}}, mindur::TI, maxgap::TI)
     csee = Vector{Vector{TI}}(undef,  size(sty, 2))
     cols = TI[]
     for c in axes(stb, 2)
-        cst = TI[] 
+        cst = TI[]
         cse = TI[]
         for i in nzrange(stb, c)
             if isequal(nonzeros(stb)[i], -1)
@@ -345,7 +345,7 @@ function mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty))
-    cst = TI[] 
+    cst = TI[]
     cse = TI[]
     for i in nzrange(stb, 1)
         if isequal(nonzeros(stb)[i], -1)
@@ -357,7 +357,7 @@ function mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
     first(sty) ? pushfirst!(cst, 1) : nothing
     last(sty) ? push!(cse, lastindex(sty, 1)) : nothing
     length(cse) == length(cst)
-    dur = cse - cst 
+    dur = cse - cst
     stss = cst[dur .≥ mindur]
     enss = cse[dur .≥ mindur]
     dft = stss[2:end] - enss[1:end-1] .> maxgap
@@ -382,9 +382,9 @@ Return the rate of onset for each event.
 
 """
 function onset(atod::MWrapper, mst)
-    fan = first(atod) 
-    nmx = mhcsminimax(atod) 
-    ngx = mhcsarg(atod) 
+    fan = first(atod)
+    nmx = mhcsminimax(atod)
+    ngx = mhcsarg(atod)
     lnmx = nmx - 0.5(fan + atod.onset)
     snmx = nmx - fan
     mst > 1 ? /(lnmx, (ngx + 0.5)) : /(snmx, ngx)
@@ -396,8 +396,8 @@ Return the rate of decline for each event.
 """
 function decline(atod::MWrapper, mse, lnx)
     lan = last(atod)
-    nmx = mhcsminimax(atod) 
-    ngx = mhcsarg(atod) 
+    nmx = mhcsminimax(atod)
+    ngx = mhcsarg(atod)
     wsnx::T = length(atod) - ngx
     lnmx = nmx - 0.5(lan + atod.decline)
     snmx = nmx - lan
@@ -467,7 +467,6 @@ function mevents(anom::MWrapper)
 end
 
 
-# potentially
 """
 Return the mean of the metrics in each pixel.
 """
@@ -680,7 +679,6 @@ function mymetric(ev::Events, metric::SymOrString)
     end
 end
  
-# NOTE: We should also return the start and end dates
 
 """
 Return the Events be used as a table (or dataframe).
