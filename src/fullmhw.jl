@@ -201,7 +201,7 @@ excess(ms::MExtreme) = ms.exceeds
 Return a MExtreme (MHW or MCS).
 
 """
-function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true)
+function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true) where {N}
     in(event, keys(events)) || error("`:$event` is not a valid event. Try `:mhw` or `:mcs`")
     ME, mthreshold = get(events, event, :mhw)
     threshold = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
