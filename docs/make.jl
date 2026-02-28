@@ -15,11 +15,14 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "Example" => "example.md",
+        "Creating extremes" => [
+            "mextremes.md",
+        ]
     ],
     # remotes = nothing,
 )
 
 deploydocs(;
-    repo="github.com/keduba/MarineHeatwaves.jl",
+    repo="github.com/keduba/marineheatwaves.jl",
     devbranch="main",
 )

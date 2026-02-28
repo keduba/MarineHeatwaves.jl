@@ -20,20 +20,34 @@ const metrics = Dict(:means => 1,
 # The Abstract types
 
 abstract type MWrapper end
+
+"""
+    MEvents{TE}
+
+    Abstract type for CS and HW Events.
+"""
 abstract type MEvents{TE <: AbstractVector} end
+
 abstract type MExtreme{TA <: AbstractVecOrMat{<: AbstractFloat}, V <: BitArray} end
 
 
 # Input structs
 
+"EventHW{TE}: event wrapper for heatwaves."
 struct EventHW{TE} <: MEvents{TE}
     maxes::TE
 end
 
+"EventCS{TE}: event wrapper for cold spell."
 struct EventCS{TE} <: MEvents{TE}
     maxes::TE
 end
 
+"""
+    MCS
+
+Construct a marine cold spell object.
+"""
 struct MCS{TA, V} <: MExtreme{TA, V}
     temp::TA
     clim::TA
@@ -48,6 +62,11 @@ function MCS(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
     MCS{typeof(temp), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
+"""
+    MHW
+
+Construct a marine heat wave object.
+"""
 struct MHW{TA, V} <: MExtreme{TA, V}
     temp::TA
     clim::TA
@@ -83,7 +102,10 @@ end
 
 # struct Events{TE} <: MEvents{TE}
 # end
+"""
 
+    Events{TE}(means, mini/max, onset, decline, duration, sums, categorys, anomaly, threshanomaly, dt::MEvents)
+"""
 struct Events{TE} <: MEvents{TE}#<:AbstractVector, Ti<:AbstractVecOrMat}
     means::TE
     minimaxes::TE
@@ -198,8 +220,10 @@ _excess(tp, th) = tp .> th
 excess(ms::MExtreme) = ms.exceeds
 
 """
-Return a MExtreme (MHW or MCS).
 
+    mextreme(sst, sstdate, mhwdate, climdate)
+
+Return a MExtreme (MHW or MCS).
 """
 function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true) where {N}
     in(event, keys(events)) || error("`:$event` is not a valid event. Try `:mhw` or `:mcs`")
@@ -457,6 +481,7 @@ _categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd)))
 
 categorys(a::MWrapper) = _categorys(a.anom, a.threshanom)
 
+"mevents(anomaly) -> Return tuple of means, sums, maximums and durations"
 function mevents(anom::MWrapper)
     # Per Event Metrics
     means = mean(anom)
@@ -784,9 +809,10 @@ end
 
 
 """
+    meventsm(ms, min_duration, max_gap)
+
 Return the Events and the labels (starts and end positions) of the event.
 """
-
 function meventsm(ms::MExtreme, mindur::Integer, maxgap::Integer)
     mindur, maxgap = convert(Vector{TI}, [mindur, maxgap])
     evst = mylabel(ms, mindur, maxgap)
@@ -798,7 +824,6 @@ end
 """
 Return the computed metrics - means, annuals and linear regression outputs as MHCMetrics.
 """
-
 function mmetricsm(ev::Events, evst, mdate, indices)
     mm = meanmetricsm(ev, mdate)
     am = annualmetricsm(ev, mdate, evst)
