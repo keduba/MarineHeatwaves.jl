@@ -15,9 +15,11 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "Example" => "example.md",
-        "Creating extremes" => [
-            "mextremes.md",
-        ]
+        "Extremes" => [
+            "Calculating extremes" => "mextremes.md",
+            "Detecting events" => "mevents.md",
+        ],
+        "Metrics" => "metrics.md"
     ],
     # remotes = nothing,
 )

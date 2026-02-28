@@ -9,7 +9,7 @@ MarineHeatwaves.EventHW
 MarineHeatwaves.Events
 ```
 
-### Functions and methods
+## Functions and methods
 
 ```@docs
 MarineHeatwaves.mylabel

@@ -28,6 +28,11 @@ abstract type MWrapper end
 """
 abstract type MEvents{TE <: AbstractVector} end
 
+"""
+    MExtreme{TE}
+
+Type for cold spell and heatwave extremes.
+"""
 abstract type MExtreme{TA <: AbstractVecOrMat{<: AbstractFloat}, V <: BitArray} end
 
 
