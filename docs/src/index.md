@@ -16,22 +16,20 @@ The functions and methods are also applicable to atmospheric heatwaves. The prin
 
 Well, first we have to make sure we have Julia on our computer.
 
-1. [Download and install Julia](https://julialang.org/downloads). You can follow the instructions for your PC (macOS, Linux or Windows).
-
+1. [Download and install Julia](https://julialang.org/downloads).
 
 2. Launch Julia by typing `julia` in your terminal.
 
 3. And then, install `MarineHeatwaves`:
-
 ```julia
 ]add MarineHeatwaves
 ```
 
-It will take a few minutes to set up and compile the package and the other packages it needs.
+## Using
 
-4. When it's done, hit `backspace` to exit the package manager.
+1. When the installation is done, hit `backspace` to exit the package manager.
 
-5. To use `MarineHeatwaves`:
+2. To use `MarineHeatwaves`:
 ```julia
 using MarineHeatwaves
 ```
