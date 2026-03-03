@@ -9,7 +9,7 @@ makedocs(;
     sitename="MarineHeatwaves.jl",
     format=Documenter.HTML(;
         canonical="https://keduba.github.io/MarineHeatwaves.jl",
-        edit_link="main",
+        # edit_link="main",
         assets=String[],
     ),
     pages=[
@@ -25,6 +25,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/keduba/marineheatwaves.jl",
-    devbranch="main",
+    repo="github.com/keduba/MarineHeatwaves.jl",
+    # devbranch="main",
 )
