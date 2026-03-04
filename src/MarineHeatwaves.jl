@@ -1,11 +1,12 @@
 module MarineHeatwaves
 
 # Write your package code here.
-using Dates
-using Statistics
-using Distributions
-# using NCDatasets
 using Base.Iterators
+import Statistics: mean, quantile, std
+import Distributions: cdf, FDist, TDist
+using Dates
+# using NCDatasets
+using SparseArrays
 
 
 include("fullmhw.jl")
