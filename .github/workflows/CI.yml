@@ -58,7 +58,7 @@ jobs:
         with:
           version: '1'
       # - uses: julia-actions/cache@v2
-        run: |
+      - run: |
           using Pkg
           Pkg.develop(PackageSpec(path=pwd()))
           Pkg.instantiate()
