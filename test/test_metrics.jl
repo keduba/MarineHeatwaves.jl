@@ -2,7 +2,7 @@
 function create_test_events(n_events::Int, dtype::Type)
     # Helper function to create a test EventsFull struct
     T = Float32
-    EventsFull(
+    Events(
         [T.(rand(1:100, n_events)) for _ in 1:1],   # means
         [T.(rand(1:100, n_events)) for _ in 1:1],   # minimaxes
         [T.(rand(1:100, n_events)) for _ in 1:1],   # onset
@@ -19,7 +19,7 @@ end
 function create_test_events(n_pixels::Int, n_events_per_pixel::Int, dtype::Type)
     # Helper function to create a test EventsFull struct
     T = Float32
-    EventsFull(
+    Events(
         [T.(rand(1:100, n_events_per_pixel)) for _ in 1:n_pixels],   # means
         [T.(rand(1:100, n_events_per_pixel)) for _ in 1:n_pixels],   # minimaxes
         [T.(rand(1:100, n_events_per_pixel)) for _ in 1:n_pixels],   # onset
