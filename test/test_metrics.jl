@@ -56,7 +56,7 @@ end
     # Create a step range of dates
     mdate = Date(2020,1,1):Month(1):Date(2021,12,31)
 
-    evst = (cst=[1:2], cse=[3:4], cols=[1,2])
+    evst = (1:2, 3:4, [1,2])
 
     result = MarineHeatwaves.annualmetricsm(emv, mdate, evst)
 
@@ -76,7 +76,7 @@ end
         mdate = Date(2020,1,1):Month(1):Date(2020,12,31)
         
         # Event start type
-        evst = (cst=[1:2], cse=[3:4], cols=[1,2])
+        evst = (1:2, 3:4, [1,2])
         
         # Call the function
         result = MarineHeatwaves.annualmetricsm(emv, mdate, evst)

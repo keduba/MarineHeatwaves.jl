@@ -21,7 +21,7 @@ abstract type MWrapper end
 
     Abstract type for CS and HW Events.
 """
-abstract type MEvents{TE <: AbstractVector} end
+abstract type MEvents{TE} end
 
 """
     MExtreme{TE}
@@ -495,7 +495,7 @@ end
 """
 Return the mean of the metrics in each pixel.
 """
-function meanmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Day})
+function meanmetricsm(ev::Events{Vector{Vector{T}}}, mdate)
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
     y = length(getfield(ev, :means))
@@ -513,7 +513,7 @@ function meanmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Day}
 end
 
 
-function meanmetricsv(ev::Events{Vector{T}}, mdate::StepRange{Date, Day})
+function meanmetricsv(ev::Events{Vector{T}}, mdate)
     # Vector version
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
@@ -546,7 +546,7 @@ end
 """
 Compute the metrics for each year in the desired period.
 """
-function annualmetricsm(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date, Day}, evst::Tuple)
+function annualmetricsm(ev::Events{Vector{Vector{T}}}, mdate, evst::Tuple)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     _, _, cols = evst
     lfy = (length ∘ unique)(year.(mdate))
