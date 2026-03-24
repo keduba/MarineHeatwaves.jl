@@ -455,7 +455,7 @@ function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple)
     mst, mse, _ = evst
     lm::TI = size(m.temp, 1)
     mt::TI = length(metrics)
-    outemp, outhsh = ntuple(_ -> Matrix{T}(undef, lm, length(cols)), 2)
+    outemp, outhsh = ntuple(_ -> Matrix{T}(undef, lm, length(mst)), 2)
     # outemp .= NaN; outhsh .= NaN
     onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef, m) for m in length.(mst)], mt)
     for (n, (cst, cse)) in enumerate(zip(mst, mse))
@@ -463,7 +463,6 @@ function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple)
             atod = MW(_anomsa(m.temp[:,n], m.clim[:,n], m.thresh[:,n], st, se, lm)...)
             outemp[st:se, n] = atod.anom
             outhsh[st:se, n] = atod.threshanom
-            @show length(catso[n]), d, length(cst)
             catso[n][d] = categorys(atod)
             onsan[n][d] = onset(atod, st)
             decan[n][d] = decline(atod, se, lm)
@@ -577,10 +576,10 @@ end
 
 
 """
-    annualmets = annualmetrics(evt, mhw_date)
+    annualmets = annualmetrics(evt, mhw_date, evst)
 Compute the metrics for each year in the desired period.
 """
-function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date})
+function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     npixels = length(getfield(ev, :means))
@@ -611,7 +610,7 @@ end
 
 
 # vector version
-function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date})
+function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -628,7 +627,7 @@ function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date})
             end
             for fm in (:means, :sums, :onset, :decline, :duration)
                 idx = metrics[fm]
-                outannual[i, idx]  = mean(getfield(ev, fm)[yx])
+                outannual[i, idx] = mean(getfield(ev, fm)[yx])
             end
             outannual[i, metrics[:maxes]] = mhcsminimax(E(getfield(ev, :minimaxes)[yx]))
             outannual[i, metrics[:frequency]] = convert(T, length(yx))
