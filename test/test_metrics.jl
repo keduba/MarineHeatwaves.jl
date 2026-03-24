@@ -39,7 +39,7 @@ metrics = MarineHeatwaves.metrics
     dtp = EventHW
     emv = create_test_events(5, dtp)
     mdate = [Date(2020, 1, 1), Date(2021, 1, 1), Date(2022, 1, 1), Date(2023, 1, 1), Date(2024, 1, 1)]
-    result = MarineHeatwaves.meanmetricsm(emv, mdate)
+    result = MarineHeatwaves.meanmetrics(emv, mdate)
     @test size(result, 1) == length(getfield(emv, :means))
     @test size(result, 2) == length(metrics)
     # Verify frequency calculation
@@ -58,7 +58,7 @@ end
 
     evst = (1:2, 3:4, [1,2])
 
-    result = MarineHeatwaves.annualmetricsm(emv, mdate, evst)
+    result = MarineHeatwaves.annualmetrics(emv, mdate, evst)
 
     @test any(!isnan, result)
     @test any(result[:,:,metrics[:frequency]] .> 0)
@@ -79,7 +79,7 @@ end
         evst = (1:2, 3:4, [1,2])
         
         # Call the function
-        result = MarineHeatwaves.annualmetricsm(emv, mdate, evst)
+        result = MarineHeatwaves.annualmetrics(emv, mdate, evst)
         
         # Verify result dimensions for single year
         @test size(result, 1) == 1  # single year
@@ -102,7 +102,7 @@ end
     outannual[:, 1, metrics[:means]] = [1.0, 2.0, 3.0, 4.0, 5.0]
     outannual[:, 2, metrics[:sums]] = [5.0, 4.0, 3.0, 2.0, 1.0]
     
-    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue = trendm(outannual)
+    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue = trend(outannual)
     @test outcoeff[1, metrics[:sums]] > 0
     @test all(0 .<= outrsqd .<= 1)
     @test all(0 .<= outpvalue .<= 1)
@@ -116,7 +116,7 @@ end
 	outannual[:, p, metrics[:means]] = [1.0, 2.0, 3.0, 4.0, 5.0] .+ p
     end
 
-    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue = trendm(outannual)
+    outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue = trend(outannual)
     @test all(outcoeff[:, metrics[:means]] .> 0)
     @test all(outrsqd[:, metrics[:means]] .> 0.9)
 end

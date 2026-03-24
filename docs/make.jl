@@ -3,16 +3,16 @@ using Documenter
 
 DocMeta.setdocmeta!(MarineHeatwaves, :DocTestSetup, :(using MarineHeatwaves); recursive=true)
 
-makedocs(;
-    modules=[MarineHeatwaves],
-    authors="keduba <jfk.uba@pm.me>, Manal Elawady <mh.elawady@uliege.be> and contributors",
-    sitename="MarineHeatwaves.jl",
-    format=Documenter.HTML(;
+makedocs(
+    modules = [MarineHeatwaves],
+    authors = "keduba <jfk.uba@pm.me>, Manal Elawady <mh.elawady@uliege.be> and contributors",
+    sitename = "MarineHeatwaves.jl",
+    format = Documenter.HTML(;
         canonical="https://keduba.github.io/MarineHeatwaves.jl",
-        # edit_link="main",
+        edit_link="main",
         assets=String[],
     ),
-    pages=[
+    pages = [
         "Home" => "index.md",
         "Example" => "example.md",
         "Extremes" => [
@@ -21,10 +21,9 @@ makedocs(;
         ],
         "Metrics" => "metrics.md"
     ],
-    # remotes = nothing,
+    remotes = nothing,
 )
 
-deploydocs(;
-    repo="github.com/keduba/MarineHeatwaves.jl",
-    # devbranch="main",
+deploydocs(repo="github.com/keduba/MarineHeatwaves.jl",
+    devbranch = "main",
 )

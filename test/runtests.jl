@@ -5,9 +5,9 @@ using Statistics
 
 @testset "MarineHeatwaves Unit Tests" begin
     # Write your tests here.
-    # include("test_times.jl")
-    # include("test_arraysin.jl")
-    # include("test_labels.jl")
+    include("test_times.jl")
+    include("test_arraysin.jl")
+    include("test_labels.jl")
     include("test_metrics.jl")
 end
 
