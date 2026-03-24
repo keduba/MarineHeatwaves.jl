@@ -232,7 +232,7 @@ _excess(tp, th) = tp .> th
 excess(ms::MExtreme) = ms.exceeds
 
 """
-    mextreme(sst, sstdate, mhwdate, climdate)
+    mex, cixs = mextreme(sst, sstdate, mhwdate, climdate)
 
 Return a MExtreme (MHW or MCS).
 """
@@ -251,9 +251,8 @@ function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmd
 end
 
 """
-    climthresh(climsst, cldt_leap_year_day, mhdt_leap_year_day,
-               event_window, smoothing_window, threshold; wrap::Bool)
-
+    clim, thresh = climthresh(climsst, cldt_leap_year_day, mhdt_leap_year_day,
+                              event_window, smoothing_window, threshold; wrap::Bool)
 Calculate and return the climatology mean and quantile.
 """
 function climthresh(cmst::Matrix{T}, clyd::Vector{TI},
@@ -354,8 +353,8 @@ function mylabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty, dims=1))
-    cstt = Vector{Vector{TI}}(undef,  size(sty, 2))
-    csee = Vector{Vector{TI}}(undef,  size(sty, 2))
+    cstt = Vector{TI}[] #Vector{Vector{TI}}(undef,  size(sty, 2))
+    csee = Vector{TI}[] #Vector{Vector{TI}}(undef,  size(sty, 2))
     cols = TI[]
     for c in axes(stb, 2)
         cst = TI[]
@@ -377,17 +376,13 @@ function mylabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
         isempty(dft) && continue
         keepat!(stss, [true; dft])
         keepat!(enss, [dft; true])
-        cstt[c] = stss
-        csee[c] = enss
+        push!(cstt, stss) #cstt[c] = stss
+        push!(csee, enss) #csee[c] = enss
         push!(cols, c)
     end
     cstt, csee, cols
 end
 
-"""
-    sts_ends = mylabel(ms::MExtreme, minimum_duration, maximum_gap)
-Return a tuple of the start positions and stop positions at which events were detected.
-"""
 function mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
@@ -457,21 +452,22 @@ Compute the anomaly of the events in each pixel and return the Event.
 """
 function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple)
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
-    mst, mse, cols = evst
+    mst, mse, _ = evst
     lm::TI = size(m.temp, 1)
-    mt::TI = 7
+    mt::TI = length(metrics)
     outemp, outhsh = ntuple(_ -> Matrix{T}(undef, lm, length(cols)), 2)
     # outemp .= NaN; outhsh .= NaN
     onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef, m) for m in length.(mst)], mt)
-    for (c, cst, cse) in zip(cols, mst, mse)
+    for (n, (cst, cse)) in enumerate(zip(mst, mse))
         for (d, (st, se)) in enumerate(zip(cst, cse))
-            atod = MW(_anomsa(m.temp[:,c], m.clim[:,c], m.thresh[:,c], st, se, lm)...)
-            outemp[st:se, c] = atod.anom
-            outhsh[st:se, c] = atod.threshanom
-            catso[c][d] = categorys(atod)
-            onsan[c][d] = onset(atod, st)
-            decan[c][d] = decline(atod, se, lm)
-            means[c][d], cums[c][d], maxes[c][d], durs[c][d] = mevents(atod)
+            atod = MW(_anomsa(m.temp[:,n], m.clim[:,n], m.thresh[:,n], st, se, lm)...)
+            outemp[st:se, n] = atod.anom
+            outhsh[st:se, n] = atod.threshanom
+            @show length(catso[n]), d, length(cst)
+            catso[n][d] = categorys(atod)
+            onsan[n][d] = onset(atod, st)
+            decan[n][d] = decline(atod, se, lm)
+            means[n][d], cums[n][d], maxes[n][d], durs[n][d] = mevents(atod)
         end
     end
     return Events(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
@@ -518,10 +514,10 @@ end
 
 
 """
-    evt, sts_ends = meventsm(ms, min_duration, max_gap)
+    evt, sts_ends = mevents(ms::MExtreme, min_duration, max_gap)
 Return the Events and the labels (starts and end positions) of the events.
 """
-function meventsm(ms::MExtreme, mindur::Integer, maxgap::Integer)
+function mevents(ms::MExtreme, mindur::Integer, maxgap::Integer)
     mindur, maxgap = convert(Vector{TI}, [mindur, maxgap])
     evst = mylabel(ms, mindur, maxgap)
     ev = anomsa(ms, evst)
@@ -535,8 +531,8 @@ Return the mean of the metrics in each pixel.
 function meanmetrics(ev::Events{Vector{Vector{T}}}, mdate)
     lfy = (length ∘ unique)(year.(mdate))
     z = length(metrics)
-    y = length(getfield(ev, :means))
-    outmean = Matrix{T}(undef, y, z)
+    npixels = length(getfield(ev, :means))
+    outmean = Matrix{T}(undef, npixels, z)
     outmean .= NaN
     for fm in (:means, :sums, :onset, :decline, :duration)
         idx = metrics[fm]
@@ -571,7 +567,7 @@ end
 Helper for the annualmetrics to deal with the year start and end ranges.
 """
 function _yrdate(mdate::StepRange{Date}, evst)
-    cst, cse, cols = evst
+    cst, cse, _ = evst
     mcste = map((x, y) -> unique(year.(vcat(x,y))), cst, cse)
     myr = map((x, y) -> unique(year.(vcat(mdate[x], mdate[y]))), cst, cse)
     myst = map(x -> year.(mdate[x]), cst)
@@ -581,12 +577,11 @@ end
 
 
 """
-    annualmets = annualmetrics(evt, mhw_date, event_start_ends)
+    annualmets = annualmetrics(evt, mhw_date)
 Compute the metrics for each year in the desired period.
 """
-function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, evst::Tuple)
+function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date})
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
-    _, _, cols = evst
     lfy = (length ∘ unique)(year.(mdate))
     npixels = length(getfield(ev, :means))
     z = length(metrics)
@@ -595,7 +590,8 @@ function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, ev
     # outannual = Array{T, 3}(undef, npixels, lfy, z)
     outannual = Array{T, 3}(undef, lfy, npixels, z)
     outannual .= NaN
-    for (c, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
+    # for (c, mz, my, mt, me) in zip(cols, mapcste, mapyr, mapyst, mapyse)
+    for (c, (mz, my, mt, me)) in enumerate(zip(mapcste, mapyr, mapyst, mapyse))
         for (i, yr) in zip(mz, my)
             yx = findall(yr .== mt)
             if isempty(yx)
@@ -615,7 +611,7 @@ end
 
 
 # vector version
-function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst::Tuple)
+function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date})
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(metrics)
@@ -706,12 +702,12 @@ end
 
 
 """
-    mhcmetrics = mhmetrics(evt::Events, sts_ends, mhwdate)::MHCMetrics
+    mhcmetrics = mhmetrics(evt::Events, mhwdate, sts_ends)::MHCMetrics
 Return the computed metrics - means, annuals and linear regression outputs as MHCMetrics.
 """
 function mhmetrics(ev::Events, mdate, evst)
     mm = meanmetrics(ev, mdate)
-    am = annualmetrics(ev, mdate, evst)
+    am = annualmetrics(ev, mdate)# evst)
     tr = trend(am)
     MHCMetrics{typeof(am), typeof(mm)}(am, mm, tr...)
 end
@@ -764,7 +760,8 @@ Return the Events as a matrix to be used as a table (or dataframe).
 function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, mdate)
     vps = first(propertynames(ev), 7)
     evs = [reduce(vcat, getfield(ev, t)) for t in vps]
-    cix = getindex(indices, 1)
+    starts, ends, cols = evst
+    cix = getindex(indices, 1)[cols]
     # the number of events per pixel
     drs = length.(getfield(ev, 1))
     ix = TI[]
@@ -773,8 +770,8 @@ function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, md
         append!(ix, repeat([Tuple(s)[1]], q))
         append!(iy, repeat([Tuple(s)[2]], q))
     end
-    stdates = [mdate[i] for i in Iterators.flatten(evst[1]) |> collect]
-    endates = [mdate[i] for i in Iterators.flatten(evst[2]) |> collect]
+    stdates = [mdate[i] for i in Iterators.flatten(starts[1]) |> collect]
+    endates = [mdate[i] for i in Iterators.flatten(ends[2]) |> collect]
     @assert length(ix) == length(iy) == sum(drs)
     stack([evs..., stdates, endates, ix, iy])
 end
@@ -800,7 +797,7 @@ function mymetric(mm::MExtreme, field::SymOrString, indices)
 end
 
 """
-    annual_onset = mymetric(mm::MHCMetrics, field, metric, indices)
+    annual_onset = mymetric(mm::MHCMetrics, field, metric, evst, indices)
 
     Args:
         field: one of annuals, means, pvalues, coeffs, rsquared...
@@ -810,6 +807,7 @@ Return a given mean, annual or trend metric.
 function mymetric(mm::MHCMetrics,
                   field::SymOrString,
                   metric::Union{SymOrString, Tuple{Vararg{SymOrString}}},
+                  evst,
                   indices)
 
     field = typeof(field) == String ? Symbol(field) : field
@@ -817,6 +815,7 @@ function mymetric(mm::MHCMetrics,
     gg = getfield(mm, field)
     # CIx, nCIx, x, y = indices
     CIx, x, y = indices
+    cix = CIx[evst[3]]
         # first for a single metric
     if metric isa SymOrString
         metric = typeof(metric) == String ? Symbol(metric) : metric
@@ -833,7 +832,7 @@ function mymetric(mm::MHCMetrics,
         end
         # outs = Matrix{T}(undef, x, y)
         outs = fill(T(NaN), x, y)
-        outs[CIx] = gg[:, idx]
+        outs[cix] = gg[:, idx]
         # outs[nCIx] .= NaN
         return outs
     else # metric is a tuple
@@ -850,7 +849,7 @@ function mymetric(mm::MHCMetrics,
             outs = ntuple(_ -> fill(T(NaN), x, y, size(gg, 1)), M)
             for i in 1:M
                 og = getindex(gg, :, :, getindex(idx, i))
-                outs[i][CIx, :] = permutedims(og)
+                outs[i][cix, :] = permutedims(og)
                 # outs[i][nCIx, :] .= NaN
             end
             return outs
@@ -858,7 +857,7 @@ function mymetric(mm::MHCMetrics,
         # outs = ntuple(_ -> Matrix{T}(undef, x, y), M)
         outs = ntuple(_ -> fill(T(NaN), x, y), M)
         for i in 1:M
-            outs[i][CIx] = getindex(gg, :, getindex(idx, i))
+            outs[i][cix] = getindex(gg, :, getindex(idx, i))
             # outs[i][nCIx] .= NaN
         end
         return outs
@@ -875,4 +874,4 @@ end
     # 3. pixel, annual and trend
     mht = mmetrics(ev, lb, indices, mdate)
 =#
-export seamask, timeindices, subtemp, MHW, MCS, EventHW, EventCS, anomsa, Events, trend, annualmetrics, meanmetrics
+export seamask, timeindices, subtemp, MHW, MCS, EventHW, EventCS, anomsa, Events, trend, annualmetrics, meanmetrics, mylabel, mextreme, mevents, mhmetrics, mymetric
