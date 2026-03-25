@@ -1,6 +1,6 @@
 
 function create_test_events(n_events::Int, dtype::Type)
-    # Helper function to create a test EventsFull struct
+    # Helper function to create a test Events struct
     T = Float32
     Events(
         [T.(rand(1:100, n_events)) for _ in 1:1],   # means
@@ -17,7 +17,7 @@ function create_test_events(n_events::Int, dtype::Type)
 end
 
 function create_test_events(n_pixels::Int, n_events_per_pixel::Int, dtype::Type)
-    # Helper function to create a test EventsFull struct
+    # Helper function to create a test Events struct
     T = Float32
     Events(
         [T.(rand(1:100, n_events_per_pixel)) for _ in 1:n_pixels],   # means

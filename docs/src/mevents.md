@@ -13,8 +13,7 @@ MarineHeatwaves.Events
 
 ```@docs
 MarineHeatwaves.mylabel
-MarineHeatwaves.anomsam
-MarineHeatwaves.meventsm
+MarineHeatwaves.anomsa
 MarineHeatwaves.mevents
 MarineHeatwaves.decline
 MarineHeatwaves.onset

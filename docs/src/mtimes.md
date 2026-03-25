@@ -2,6 +2,6 @@
 
 ```@docs
 MarineHeatwaves.timeindices
-MarineHeatwaves.urange
+MarineHeatwaves.dayrange
 MarineHeatwaves._yrdate
 ```

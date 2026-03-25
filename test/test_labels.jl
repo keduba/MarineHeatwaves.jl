@@ -34,8 +34,8 @@ end
     ]
     cols = [1, 2]
     enst = (starts, ends, cols)
-    ahoy = MarineHeatwaves.anomsam(me, enst)
-    typeof(ahoy) == MarineHeatwaves.EventsFull
+    ahoy = MarineHeatwaves.anomsa(me, enst)
+    typeof(ahoy) == MarineHeatwaves.Events
     length(ahoy.means) == length(cols)
     size(ahoy.tpanom) == (size(ms, 1), length(cols))
 end

@@ -6,7 +6,7 @@
         TI = Int16
         clyd = collect(TI, 1:10)
         win::TI = 3
-        ranges = MarineHeatwaves.urange(clyd, win)
+        ranges = MarineHeatwaves.dayrange(clyd, win)
         ranges[1] == [1:4]
         length(ranges) == 366
     end
@@ -39,7 +39,7 @@ end
     mhix = 2:6
     clix = 1:7
 
-    res = _subtemp(sst_1d, mhix, clix)
+    res = subtemp(sst_1d, mhix, clix)
     @test length(res) == 3
     @test res[1] == sst_1d[mhix]
     @test res[2] == sst_1d[clix]
@@ -48,8 +48,8 @@ end
     sst_3d = rand(5, 5, 6)
     mhix = 1:3
     clix = 2:5
-    ms, cs, cix = _subtemp(sst_3d, mhix, clix)
-    @test length(cix) == 4
+    ms, cs, cix = subtemp(sst_3d, mhix, clix)
+    @test length(cix) == 3
     @test size(ms) == (length(mhix), length(cix[1]))
     @test size(cs) == (length(clix), length(cix[1]))
 end
