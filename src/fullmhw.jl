@@ -4,7 +4,7 @@ const TI = Int16
 
 const SymOrString = Union{Symbol, String}
 const Metrics = Dict(:means => 1,
-                     :maxes => 2,
+                     :minimaxes => 2,
                      :sums => 3,
                      :duration => 4,
                      :frequency => 5,
@@ -241,15 +241,17 @@ Return a MExtreme (MHW or MCS), and the indices of non-NaN values in the origina
 """
 function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true) where {T<:AbstractFloat, N}
     in(event, keys(EVENTS)) || error("`:$event` is not a valid event. Try `:mhw` or `:mcs`")
-    ME, mthreshold = get(EVENTS, event, :mhw)
+    ME, mthreshold = getindex(EVENTS, event)
     threshold = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
     window, smoothwindow = convert.(TI, [window, smoothwindow])
+    @info "Doing a little data prep..."
     mhwix = timeindices(sstdate, mhwdate)
     clmix = timeindices(sstdate, clmdate)
     mlyd = leapyearday.(sstdate[mhwix])
     clyd = leapyearday.(sstdate[clmix])
+    @info "Calculating the data subset for the given period..."
     mhtemp, ctemp, CIs = subtemp(sst, mhwix, clmix)
-    println("Calculating the climatology mean and quantile...")
+    @info "Calculating the climatology mean and quantile..."
     clima, thresh = climthresh(ctemp, clyd, mlyd, window, smoothwindow, threshold, wrap=wrap)
     return ME(mhtemp, clima, thresh), CIs
 end
@@ -522,7 +524,9 @@ Return the Events and the labels (starts and end positions) of the events.
 """
 function mevents(ms::MExtreme, mindur::Integer, maxgap::Integer)
     mindur, maxgap = convert(Vector{TI}, [mindur, maxgap])
+    @info "Looking for the start and end positions..."
     evst = mhlabel(ms, mindur, maxgap)
+    @info "Looking for the event metrics..."
     ev = anomsa(ms, evst)
     return ev, evst
 end
@@ -767,7 +771,7 @@ function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, md
     vps = first(propertynames(ev), 7)
     evs = [reduce(vcat, getfield(ev, t)) for t in vps]
     starts, ends, cols = evst
-    cix = getindex(indices, 1)#[cols]
+    cix = getindex(indices, 1)[cols]
     # the number of events per pixel
     drs = length.(getfield(ev, 1))
     ix = TI[]
@@ -795,6 +799,7 @@ function mymetric(mm::MExtreme, field::SymOrString, indices)
     CIx, x, y = indices
     # CIx, nCIx, x, y = indices
     gg = getfield(mm, field)
+    T = eltype(gg)
     outs = eltype(gg) == Bool ? falses(x, y, size(gg, 1)) : fill(T(NaN), x, y, size(gg, 1)) # Array{T, 3}(undef, x, y, size(gg, 1))
     # outs = fill(T(NaN), x, y, size(gg, 1))
     outs[CIx, :] = permutedims(gg)
@@ -857,7 +862,6 @@ function mymetric(mm::MHCMetrics,
             for i in 1:M
                 og = getindex(gg, :, :, getindex(idx, i))
                 outs[i][cix, :] = permutedims(og)
-                # outs[i][nCIx, :] .= NaN
             end
             return outs
         end
@@ -865,7 +869,6 @@ function mymetric(mm::MHCMetrics,
         outs = ntuple(_ -> fill(T(NaN), x, y), M)
         for i in 1:M
             outs[i][cix] = getindex(gg, :, getindex(idx, i))
-            # outs[i][nCIx] .= NaN
         end
         return outs
     end
