@@ -12,7 +12,7 @@ MarineHeatwaves.Events
 ## Functions and methods
 
 ```@docs
-MarineHeatwaves.mylabel
+MarineHeatwaves.mhlabel
 MarineHeatwaves.anomsa
 MarineHeatwaves.mevents
 MarineHeatwaves.decline
