@@ -1,6 +1,5 @@
 # Here begins the full script of the marine heatwaves
 
-const T = AbstractFloat
 const TI = Int16
 
 const SymOrString = Union{Symbol, String}
@@ -118,8 +117,8 @@ struct Events{TE} <: MEvents{TE}#<:AbstractVector, Ti<:AbstractVecOrMat}
     duration::TE
     sums::TE
     categorys::TE
-    tpanom::VecOrMat{T}
-    thanom::VecOrMat{T}
+    tpanom::VecOrMat{<:AbstractFloat}
+    thanom::VecOrMat{<:AbstractFloat}
     dtype::Type{<:MEvents}
 end
 
@@ -157,14 +156,14 @@ mhcsminimax(a::MCWrapper) = minimum(a)
 mhcsarg(a::MHWrapper) = argmax(a)
 mhcsarg(a::MCWrapper) = argmin(a)
 
-mhcsminimax(x::EventHW{Vector{T}}) = maximum(x.maxes)
-mhcsminimax(x::EventCS{Vector{T}}) = minimum(x.maxes)
+mhcsminimax(x::EventHW{Vector{T}}) where T = maximum(x.maxes)
+mhcsminimax(x::EventCS{Vector{T}}) where T = minimum(x.maxes)
 
-function mhcsminimax(x::EventHW{Vector{Vector{T}}})
+function mhcsminimax(x::EventHW{Vector{Vector{T}}}) where T
     return @inbounds [maximum(ia) for ia in x.maxes]
 end
 
-function mhcsminimax(x::EventCS{Vector{Vector{T}}})
+function mhcsminimax(x::EventCS{Vector{Vector{T}}}) where T
     return @inbounds [minimum(ia) for ia in x.maxes]
 end
 
@@ -240,7 +239,7 @@ excess(ms::MExtreme) = ms.exceeds
 
 Return a MExtreme (MHW or MCS), and the indices of non-NaN values in the original array.
 """
-function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true) where {N}
+function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true) where {T<:AbstractFloat, N}
     in(event, keys(EVENTS)) || error("`:$event` is not a valid event. Try `:mhw` or `:mcs`")
     ME, mthreshold = get(EVENTS, event, :mhw)
     threshold = isnothing(threshold) ? convert(T, mthreshold) : convert(T, threshold)
@@ -262,7 +261,7 @@ Calculate and return the climatology mean and quantile.
 """
 function climthresh(cmst::Matrix{T}, clyd::Vector{TI},
                     mlyd::Vector{TI}, window::Integer, smoothwindow::Integer,
-                    threshold::AbstractFloat; wrap::Bool=false)
+                    threshold::AbstractFloat; wrap::Bool=false) where T<:AbstractFloat
     window = convert(TI, window)
     smoothwindow = convert(TI, smoothwindow)
     threshold = convert(T, threshold)
@@ -287,7 +286,7 @@ end
 
 function climthresh(cmst::Vector{T}, clyd::Vector{TI},
                     mlyd::Vector{TI}, window::Integer, smoothwindow::Integer,
-                    threshold::T; wrap::Bool=true)
+                    threshold::T; wrap::Bool=true) where T <: AbstractFloat
     window = convert(TI, window)
     smoothwindow = convert(TI, smoothwindow)
     dayranges = dayrange(clyd, window)
@@ -354,7 +353,7 @@ end
     sts_ends = mhlabel(ms::MExtreme, minimum_duration, maximum_gap)
 Return a tuple of the start positions, stop positions and pixel columns at which events were detected.
 """
-function mhlabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
+function mhlabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer) where T <: AbstractFloat
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty, dims=1))
@@ -388,7 +387,7 @@ function mhlabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
     cstt, csee, cols
 end
 
-function mhlabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
+function mhlabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI) where T <:AbstractFloat
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty))
@@ -414,7 +413,7 @@ function mhlabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
     stss, enss
 end
 
-function _anomsa(sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::TI, lm::TI)
+function _anomsa(sst::Vector{T}, clim::Vector{T}, thsh::Vector{T}, st::TI, se::TI, lm::TI) where T <: AbstractFloat
     @views begin
         ant = sst[st:se] - clim[st:se]
         tht = thsh[st:se] - clim[st:se]
@@ -445,7 +444,7 @@ function decline(atod::MWrapper, mse, lnx)
     lan = last(atod)
     nmx = mhcsminimax(atod)
     ngx = mhcsarg(atod)
-    wsnx::T = length(atod) - ngx
+    wsnx = length(atod) - ngx
     lnmx = nmx - 0.5(lan + atod.decline)
     snmx = nmx - lan
     mse < lnx ? /(lnmx, (wsnx + 0.5)) : ngx == lnx ? snmx : /(snmx, wsnx)
@@ -455,7 +454,7 @@ end
     evt = anomsa(me::MExtreme, sts_ends)::Events
 Compute the anomaly of the events in each pixel and return the Event.
 """
-function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple)
+function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple) where T <: AbstractFloat
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse, _ = evst
     lm::TI = size(m.temp, 1)
@@ -478,7 +477,7 @@ function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple)
 end
 
 
-function anomsa(m::MExtreme{Vector{T}}, evst::Tuple)
+function anomsa(m::MExtreme{Vector{T}}, evst::Tuple) where T<:AbstractFloat
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse = evst
     lm::TI = size(m.temp, 1)
@@ -500,7 +499,7 @@ function anomsa(m::MExtreme{Vector{T}}, evst::Tuple)
     return Events(means, maxes, onsan, decan, durs, cums, catso, outemp, outhsh, m.edtype)
 end
 
-_categorys(anom::Vector{T}, thsd::Vector{T}) = min(4, maximum(fld.(anom, thsd)))
+_categorys(anom::Vector{T}, thsd::Vector{T}) where T<:AbstractFloat = min(4, maximum(fld.(anom, thsd)))
 
 categorys(a::MWrapper) = _categorys(a.anom, a.threshanom)
 
@@ -532,7 +531,7 @@ end
     meanmets = meanmetrics(evt, mhw_date)
 Return the mean of the metrics in each pixel.
 """
-function meanmetrics(ev::Events{Vector{Vector{T}}}, mdate)
+function meanmetrics(ev::Events{Vector{Vector{T}}}, mdate) where T<:AbstractFloat
     lfy = (length ∘ unique)(year.(mdate))
     z = length(Metrics)
     npixels = length(getfield(ev, :means))
@@ -550,7 +549,7 @@ function meanmetrics(ev::Events{Vector{Vector{T}}}, mdate)
 end
 
 
-function meanmetrics(ev::Events{Vector{T}}, mdate)
+function meanmetrics(ev::Events{Vector{T}}, mdate) where T<:AbstractFloat
     # Vector version
     lfy = (length ∘ unique)(year.(mdate))
     z = length(Metrics)
@@ -584,7 +583,7 @@ end
     annualmets = annualmetrics(evt, mhw_date, evst)
 Compute the metrics for each year in the desired period.
 """
-function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, evst)
+function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, evst) where T<:AbstractFloat
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     npixels = length(getfield(ev, :means))
@@ -615,7 +614,7 @@ end
 
 
 # vector version
-function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst)
+function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst) where T<:AbstractFloat
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     z =  length(Metrics)
@@ -643,7 +642,7 @@ function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst)
 end
 
 
-function trend(outannual::Array{T, 3})
+function trend(outannual::Array{T, 3}) where T
     X = 1:size(outannual, 1) # the number of years
     z = length(Metrics)
     sz = Base.tail(size(outannual))
@@ -667,7 +666,7 @@ function trend(outannual::Array{T, 3})
 end
 
 # Vector version Output:
-function trend(outannual::Matrix{T})
+function trend(outannual::Matrix{T}) where T
     X = 1:size(outannual, 1)
     z = length(Metrics)
     # each metric is returned as an index of a vector
@@ -735,7 +734,7 @@ end
     mymetric(evt::Events{Vector{T}})::Matrix{T}
 Return the Events of a single pixel as a matrix
 """
-function mymetric(ev::Events{Vector{T}})
+function mymetric(ev::Events{Vector{T}}) where T
     # Return a vector of vectors
     vps = first(propertynames(ev), 7)
     stack([reduce(vcat, getfield(ev, t)) for t in vps])
@@ -761,7 +760,7 @@ end
     mymetric(evt, indices, startends, mdate)::Matrix
 Return the Events as a matrix to be used as a table (or dataframe).
 """
-function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, mdate)
+function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, mdate) where T
     
     # FIX: Make the mdate here optional, same as evst and maybe indices
 
