@@ -1,6 +1,6 @@
 # Here begins the full script of the marine heatwaves
 
-const T = Float32
+const T = AbstractFloat
 const TI = Int16
 
 const SymOrString = Union{Symbol, String}

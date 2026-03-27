@@ -31,7 +31,7 @@ The functions and methods are also applicable to atmospheric heatwaves. The prin
 3. And then, install `MarineHeatwaves`:
 
 ```julia
-]add MarineHeatwaves
+]add https://github.com/keduba/MarineHeatwaves.jl
 ```
 
 
