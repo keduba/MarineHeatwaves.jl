@@ -79,7 +79,7 @@ end
 end
 
 @testset "det -- climthresh" begin
-    println("Testing climthresh")
+    println("Testing climthresh... ")
     ngrid = 3
     cmst = Matrix{Float32}(reshape(1.0:366*ngrid, 366, ngrid))
     mly = Int16[60, 150, 250] #1:200

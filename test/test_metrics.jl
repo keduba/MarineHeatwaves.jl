@@ -33,22 +33,24 @@ function create_test_events(n_pixels::Int, n_events_per_pixel::Int, dtype::Type)
     )
 end
 
-metrics = MarineHeatwaves.metrics
+Metrics = MarineHeatwaves.Metrics
 
 @testset "det meanmetrics" begin
+    println("Testing meanmetrics ...")
     dtp = EventHW
     emv = create_test_events(5, dtp)
     mdate = [Date(2020, 1, 1), Date(2021, 1, 1), Date(2022, 1, 1), Date(2023, 1, 1), Date(2024, 1, 1)]
     result = MarineHeatwaves.meanmetrics(emv, mdate)
     @test size(result, 1) == length(getfield(emv, :means))
-    @test size(result, 2) == length(metrics)
+    @test size(result, 2) == length(Metrics)
     # Verify frequency calculation
-    @test result[metrics[:frequency]] ≈ (length.(emv.duration) ./ 5)[]  atol=1e-6
+    @test result[Metrics[:frequency]] ≈ (length.(emv.duration) ./ 5)[]  atol=1e-6
     # Verify days calculation
-    @test result[metrics[:days]] ≈ (sum.(emv.duration) / 5)[] atol=1e-6
+    @test result[Metrics[:days]] ≈ (sum.(emv.duration) / 5)[] atol=1e-6
 end
 
 @testset "det annualmetrics" begin
+    println("Testing annualmetrics ...")
     dtp = EventHW
     n_px = 3
     n_events_per_px = 5
@@ -61,8 +63,8 @@ end
     result = MarineHeatwaves.annualmetrics(emv, mdate, evst)
 
     @test any(!isnan, result)
-    @test any(result[:,:,metrics[:frequency]] .> 0)
-    @test any(result[:,:,metrics[:days]] .> 0)
+    @test any(result[:,:,Metrics[:frequency]] .> 0)
+    @test any(result[:,:,Metrics[:days]] .> 0)
 end
 
 @testset "det annualmetrics single year" begin
@@ -84,11 +86,12 @@ end
         # Verify result dimensions for single year
         @test size(result, 1) == 1  # single year
     @test size(result, 2) == length(evst[3])  # pixels/columns
-    @test size(result, 3) == length(metrics)  # metrics
+    @test size(result, 3) == length(Metrics)  # metrics
 end
 
 @testset "trend functions" begin
-    n_years = 5; n_pixels = 3; n_metrics = length(metrics)
+    println("Testing trend...")
+    n_years = 5; n_pixels = 3; n_metrics = length(Metrics)
     outannual = zeros(Float32, n_years, n_pixels, n_metrics)
     for m in 1:n_metrics
 	for p in 1:n_pixels
@@ -99,24 +102,24 @@ end
 	    end
 	end
     end
-    outannual[:, 1, metrics[:means]] = [1.0, 2.0, 3.0, 4.0, 5.0]
-    outannual[:, 2, metrics[:sums]] = [5.0, 4.0, 3.0, 2.0, 1.0]
+    outannual[:, 1, Metrics[:means]] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    outannual[:, 2, Metrics[:sums]] = [5.0, 4.0, 3.0, 2.0, 1.0]
     
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue = trend(outannual)
-    @test outcoeff[1, metrics[:sums]] > 0
+    @test outcoeff[1, Metrics[:sums]] > 0
     @test all(0 .<= outrsqd .<= 1)
     @test all(0 .<= outpvalue .<= 1)
 end
 
 @testset "special trend" begin
-    n_years = 5; n_pixels = 3; n_metrics = length(metrics)
+    n_years = 5; n_pixels = 3; n_metrics = length(Metrics)
     outannual = zeros(Float32, n_years, n_pixels, n_metrics)
 
     for p in 1:n_pixels
-	outannual[:, p, metrics[:means]] = [1.0, 2.0, 3.0, 4.0, 5.0] .+ p
+	outannual[:, p, Metrics[:means]] = [1.0, 2.0, 3.0, 4.0, 5.0] .+ p
     end
 
     outcoeff, outerror_coeff, outrsqd, outintercept, outpvalue = trend(outannual)
-    @test all(outcoeff[:, metrics[:means]] .> 0)
-    @test all(outrsqd[:, metrics[:means]] .> 0.9)
+    @test all(outcoeff[:, Metrics[:means]] .> 0)
+    @test all(outrsqd[:, Metrics[:means]] .> 0.9)
 end
