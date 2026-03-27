@@ -69,6 +69,7 @@ function Base.show(io::IO, ::MIME"text/plain", m::Events)
     end
 end
 
+#=
 # MHCMetrics
 function Base.show(io::IO, ::MIME"text/plain", m::MHCMetrics)
     summary(io, m)
@@ -81,9 +82,10 @@ function Base.show(io::IO, ::MIME"text/plain", m::MHCMetrics)
         print(io, rpad(String(fd), padd), ": ", getfield(m, fd), "\n  ") # right or left padding
     end
 end
+=#
 
-# MHCMetricsm
-function Base.show(io::IO, ::MIME"text/plain", m::MHCMetricsm)
+# MHCMetrics
+function Base.show(io::IO, ::MIME"text/plain", m::MHCMetrics)
     summary(io, m)
     print(io, ":\n")
     # kinda works for a vector. 
@@ -99,20 +101,3 @@ function Base.show(io::IO, ::MIME"text/plain", m::MHCMetricsm)
     end
 end
 
-
-# MHWCSOutarray
-function Base.show(io::IO, ::MIME"text/plain", m::MHWCSO)
-    summary(io, m)
-    print(io, ":\n  ")
-    # kinda works for a vector. 
-    # needs to be modified for a matrix
-    joy = String.(propertynames(m))
-    padd = maximum([length(s) for s in joy])
-    lp = length(propertynames(m))
-    for (i, fd) in enumerate(propertynames(m))
-        print(io, rpad(String(fd), padd+1))  # right or left padding
-        summary(io, getfield(m, fd))
-        print(io, ":\n", getfield(m, fd))
-        print(io, i < lp ? "\n\n" : "")
-    end
-end

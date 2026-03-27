@@ -4,7 +4,7 @@ const T = Float32
 const TI = Int16
 
 const SymOrString = Union{Symbol, String}
-const metrics = Dict(:means => 1,
+const Metrics = Dict(:means => 1,
                      :maxes => 2,
                      :sums => 3,
                      :duration => 4,
@@ -27,10 +27,9 @@ abstract type MEvents{TE} end
 """
     MExtreme{TE}
 
-Type for cold spell and heatwave extremes.
+Abstract type for cold spells and heatwave extremes.
 """
 abstract type MExtreme{TA <: AbstractVecOrMat{<: AbstractFloat}, V <: BitArray} end
-
 
 # Input structs
 
@@ -51,11 +50,6 @@ struct EventCS{TE} <: MEvents{TE}
     maxes::TE
 end
 
-"""
-    MCS
-
-Construct a marine cold spell object.
-"""
 struct MCS{TA, V} <: MExtreme{TA, V}
     temp::TA
     clim::TA
@@ -64,17 +58,16 @@ struct MCS{TA, V} <: MExtreme{TA, V}
     edtype::Type{EventCS}
 end
 
+"""
+    mcs = MCS(temp, clim, thresh)::MCS
+Construct a marine cold spell object.
+"""
 function MCS(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
     temp = convert(typeof(clim), temp)
     exc = _excess(thresh, temp)
     MCS{typeof(temp), typeof(exc)}(temp, clim, thresh, exc, EventCS)
 end
 
-"""
-    MHW
-
-Construct a marine heat wave object.
-"""
 struct MHW{TA, V} <: MExtreme{TA, V}
     temp::TA
     clim::TA
@@ -83,6 +76,10 @@ struct MHW{TA, V} <: MExtreme{TA, V}
     edtype::Type{EventHW}
 end
 
+"""
+    mhw = MHW(temp, clim, thresh)::MHW
+Construct a marine heat wave object.
+"""
 function MHW(temp::AT, clim::AT, thresh::AT) where AT<:VecOrMat{<:AbstractFloat}
     temp = convert(typeof(clim), temp)
     exc = _excess(temp, thresh)
@@ -109,8 +106,6 @@ struct MHWrapper{T} <: MWrapper
     decline::T
 end
 
-# struct Events{TE} <: MEvents{TE}
-# end
 """
     Events{TE}(means, mini/max, onset, decline, duration,
                sums, categorys, anomaly, threshanomaly, dt::MEvents)
@@ -186,12 +181,17 @@ function timeindices(sstdate::StepRange{Date, Day}, evtdate::StepRange{Date, Day
     return range(si, ei)
 end
 
+"""
+    mask = seamask(sst, dims)
+Compute the regions of the data that are always NaN, and return them as a mask.
+"""
 seamask(sst::AbstractArray, dims) = dropdims(count(!isnan, sst, dims=dims) .> 0, dims=dims)
 
 """
     subtemp(sst::Array, mhix::UnitRange, clix::UnitRange)
 
-Calculate the subset of the input array.
+Calculate the subset of the input array, using the range of the dates for the mhw/mcs event (mhix) and the climatology (clix)
+
 For n-dimensional array input where n > 1, return n-1 dimension.
 
 Return the array subset and indices of mask.
@@ -229,12 +229,16 @@ leapyearday(mts::Date)::TI = dayofyear(mts) > 59 && !isleapyear(mts) ? dayofyear
 
 _excess(tp, th) = tp .> th
 
+"""
+    excds = excess(me::MExtreme)
+Return in a Vector or Matrix, regions where the value is above (mhw) or below (mcs) the threshold.
+"""
 excess(ms::MExtreme) = ms.exceeds
 
 """
     mex, cixs = mextreme(sst, sstdate, mhwdate, climdate)
 
-Return a MExtreme (MHW or MCS).
+Return a MExtreme (MHW or MCS), and the indices of non-NaN values in the original array.
 """
 function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmdate::StepRange; event=:mhw, window=5, smoothwindow=31, threshold=nothing, wrap=true) where {N}
     in(event, keys(EVENTS)) || error("`:$event` is not a valid event. Try `:mhw` or `:mcs`")
@@ -246,6 +250,7 @@ function mextreme(sst::Array{T, N}, sstdate::StepRange, mhwdate::StepRange, clmd
     mlyd = leapyearday.(sstdate[mhwix])
     clyd = leapyearday.(sstdate[clmix])
     mhtemp, ctemp, CIs = subtemp(sst, mhwix, clmix)
+    println("Calculating the climatology mean and quantile...")
     clima, thresh = climthresh(ctemp, clyd, mlyd, window, smoothwindow, threshold, wrap=wrap)
     return ME(mhtemp, clima, thresh), CIs
 end
@@ -346,10 +351,10 @@ function dayrange(clyd::Vector{TI}, win::TI)
 end
 
 """
-    sts_ends = mylabel(ms::MExtreme, minimum_duration, maximum_gap)
+    sts_ends = mhlabel(ms::MExtreme, minimum_duration, maximum_gap)
 Return a tuple of the start positions, stop positions and pixel columns at which events were detected.
 """
-function mylabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
+function mhlabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty, dims=1))
@@ -383,7 +388,7 @@ function mylabel(ms::MExtreme{Matrix{T}}, mindur::Integer, maxgap::Integer)
     cstt, csee, cols
 end
 
-function mylabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
+function mhlabel(ms::MExtreme{Vector{T}}, mindur::TI, maxgap::TI)
     (mindur <= 0 || maxgap <= 0) && error("The minimum duration or maximum gap cannot be less than 1.")
     sty = excess(ms)
     stb = sparse(diff(sty))
@@ -454,7 +459,7 @@ function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple)
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse, _ = evst
     lm::TI = size(m.temp, 1)
-    mt::TI = length(metrics)
+    mt::TI = length(Metrics)
     outemp, outhsh = ntuple(_ -> Matrix{T}(undef, lm, length(mst)), 2)
     # outemp .= NaN; outhsh .= NaN
     onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef, m) for m in length.(mst)], mt)
@@ -518,7 +523,7 @@ Return the Events and the labels (starts and end positions) of the events.
 """
 function mevents(ms::MExtreme, mindur::Integer, maxgap::Integer)
     mindur, maxgap = convert(Vector{TI}, [mindur, maxgap])
-    evst = mylabel(ms, mindur, maxgap)
+    evst = mhlabel(ms, mindur, maxgap)
     ev = anomsa(ms, evst)
     return ev, evst
 end
@@ -529,18 +534,18 @@ Return the mean of the metrics in each pixel.
 """
 function meanmetrics(ev::Events{Vector{Vector{T}}}, mdate)
     lfy = (length ∘ unique)(year.(mdate))
-    z = length(metrics)
+    z = length(Metrics)
     npixels = length(getfield(ev, :means))
     outmean = Matrix{T}(undef, npixels, z)
     outmean .= NaN
     for fm in (:means, :sums, :onset, :decline, :duration)
-        idx = metrics[fm]
+        idx = Metrics[fm]
         outmean[:, idx]  = mean.(getfield(ev, fm))
     end
     E = ev.dtype
-    outmean[:, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
-    outmean[:, metrics[:frequency]] = @. length(ev.duration)/lfy
-    outmean[:, metrics[:days]] = @. sum(ev.duration)/lfy
+    outmean[:, Metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
+    outmean[:, Metrics[:frequency]] = @. length(ev.duration)/lfy
+    outmean[:, Metrics[:days]] = @. sum(ev.duration)/lfy
     outmean
 end
 
@@ -548,17 +553,17 @@ end
 function meanmetrics(ev::Events{Vector{T}}, mdate)
     # Vector version
     lfy = (length ∘ unique)(year.(mdate))
-    z = length(metrics)
+    z = length(Metrics)
     outmean = Vector{T}(undef, z)
     # check the metrics dictionary to ensure order of variables
     for fm in (:means, :sums, :onset, :decline, :duration)
-        idx = metrics[fm]
+        idx = Metrics[fm]
         outmean[idx]  = mean(getfield(ev, fm))
     end
     E = ev.dtype
-    outmean[metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
-    outmean[metrics[:frequency]] = length(ev.duration)/lfy
-    outmean[metrics[:days]] = sum(ev.duration)/lfy
+    outmean[Metrics[:maxes]] = mhcsminimax(E(ev.minimaxes))
+    outmean[Metrics[:frequency]] = length(ev.duration)/lfy
+    outmean[Metrics[:days]] = sum(ev.duration)/lfy
     outmean
 end
 
@@ -583,7 +588,7 @@ function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, ev
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
     npixels = length(getfield(ev, :means))
-    z = length(metrics)
+    z = length(Metrics)
     E = ev.dtype
     # no of years * no of pixels * no of metrics
     # outannual = Array{T, 3}(undef, npixels, lfy, z)
@@ -597,12 +602,12 @@ function annualmetrics(ev::Events{Vector{Vector{T}}}, mdate::StepRange{Date}, ev
                 yx = findall(yr .== me)
             end
             for fm in (:means, :sums, :duration, :onset, :decline)
-                idx = metrics[fm]
+                idx = Metrics[fm]
                 outannual[i, c, idx]  = mean(getfield(ev, fm)[c][yx])
             end
-            outannual[i, c, metrics[:maxes]] = mhcsminimax(E(ev.minimaxes[c][yx]))
-            outannual[i, c, metrics[:frequency]] = convert(T, length(yx))
-            outannual[i, c, metrics[:days]] = convert(T, sum(ev.duration[c][yx]))
+            outannual[i, c, Metrics[:maxes]] = mhcsminimax(E(ev.minimaxes[c][yx]))
+            outannual[i, c, Metrics[:frequency]] = convert(T, length(yx))
+            outannual[i, c, Metrics[:days]] = convert(T, sum(ev.duration[c][yx]))
         end
     end
     outannual
@@ -613,7 +618,7 @@ end
 function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst)
     mapcste, mapyr, mapyst, mapyse = _yrdate(mdate, evst)
     lfy = (length ∘ unique)(year.(mdate))
-    z =  length(metrics)
+    z =  length(Metrics)
     E = ev.dtype
     # outannual = ntuple(_ -> Vector{T}(undef, lfy), z)
     # no of years * no of metrics
@@ -626,12 +631,12 @@ function annualmetrics(ev::Events{Vector{T}}, mdate::StepRange{Date}, evst)
                 yx = findall(yr .== me)
             end
             for fm in (:means, :sums, :onset, :decline, :duration)
-                idx = metrics[fm]
+                idx = Metrics[fm]
                 outannual[i, idx] = mean(getfield(ev, fm)[yx])
             end
-            outannual[i, metrics[:maxes]] = mhcsminimax(E(getfield(ev, :minimaxes)[yx]))
-            outannual[i, metrics[:frequency]] = convert(T, length(yx))
-            outannual[i, metrics[:days]] = sum(getfield(ev, :duration)[yx])
+            outannual[i, Metrics[:maxes]] = mhcsminimax(E(getfield(ev, :minimaxes)[yx]))
+            outannual[i, Metrics[:frequency]] = convert(T, length(yx))
+            outannual[i, Metrics[:days]] = sum(getfield(ev, :duration)[yx])
         end
     end
     outannual
@@ -640,7 +645,7 @@ end
 
 function trend(outannual::Array{T, 3})
     X = 1:size(outannual, 1) # the number of years
-    z = length(metrics)
+    z = length(Metrics)
     sz = Base.tail(size(outannual))
     # each metric is returned as the column of a matrix
     outpvalue = Matrix{T}(undef, sz)
@@ -664,7 +669,7 @@ end
 # Vector version Output:
 function trend(outannual::Matrix{T})
     X = 1:size(outannual, 1)
-    z = length(metrics)
+    z = length(Metrics)
     # each metric is returned as an index of a vector
     outpvalue = Vector{T}(undef, z)
     outcoeff = Vector{T}(undef, z)
@@ -706,7 +711,7 @@ Return the computed metrics - means, annuals and linear regression outputs as MH
 """
 function mhmetrics(ev::Events, mdate, evst)
     mm = meanmetrics(ev, mdate)
-    am = annualmetrics(ev, mdate)# evst)
+    am = annualmetrics(ev, mdate, evst)
     tr = trend(am)
     MHCMetrics{typeof(am), typeof(mm)}(am, mm, tr...)
 end
@@ -718,7 +723,7 @@ end
 for f in (:pvalues, :coeffs, :rsquared)
     @eval begin
         function $f(am::MHCMetrics, metric)
-            idx = get(metrics, metric, metric)
+            idx = get(Metrics, metric, metric)
             <:(typeof(idx), Integer) || throw(KeyError(idx))
             xx = getfield(am, Symbol($f))
             ndims(xx) == 1 ? getindex(xx, idx) : getindex(xx, :, :, idx)
@@ -728,7 +733,7 @@ end
 
 """
     mymetric(evt::Events{Vector{T}})::Matrix{T}
-Return the Eventsfull of a single pixel as a matrix
+Return the Events of a single pixel as a matrix
 """
 function mymetric(ev::Events{Vector{T}})
     # Return a vector of vectors
@@ -746,7 +751,7 @@ function mymetric(ev::Events, metric::SymOrString)
     if metric in fd
         return reduce(vcat, getfield(ev, metric))
     else
-        @info "Perhaps you mean one of ", keys(metrics)
+        @info "Perhaps you mean one of ", keys(Metrics)
         throw(KeyError(metric))
     end
 end
@@ -757,6 +762,9 @@ end
 Return the Events as a matrix to be used as a table (or dataframe).
 """
 function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, mdate)
+    
+    # FIX: Make the mdate here optional, same as evst and maybe indices
+
     vps = first(propertynames(ev), 7)
     evs = [reduce(vcat, getfield(ev, t)) for t in vps]
     starts, ends, cols = evst
@@ -818,8 +826,8 @@ function mymetric(mm::MHCMetrics,
         # first for a single metric
     if metric isa SymOrString
         metric = typeof(metric) == String ? Symbol(metric) : metric
-        metric in keys(metrics) || throw(KeyError(metric))
-        idx = getindex(metrics, metric)
+        metric in keys(Metrics) || throw(KeyError(metric))
+        idx = getindex(Metrics, metric)
         # :annuals is 1-D larger than the others
         if field == :annuals
             gg = getindex(gg, :, :, idx)
@@ -839,8 +847,8 @@ function mymetric(mm::MHCMetrics,
         nmet = typeof(metric) == NTuple{M, Symbol} ? metric : Symbol.(metric)
         idx = TI[]
         for mt in nmet
-            mt in keys(metrics) || throw(KeyError(mt))
-            push!(idx, getindex(metrics, mt))
+            mt in keys(Metrics) || throw(KeyError(mt))
+            push!(idx, getindex(Metrics, mt))
         end
         @assert M == length(idx)
         if field == :annuals
@@ -873,4 +881,4 @@ end
     # 3. pixel, annual and trend
     mht = mmetrics(ev, lb, indices, mdate)
 =#
-export seamask, timeindices, subtemp, MHW, MCS, EventHW, EventCS, anomsa, Events, trend, annualmetrics, meanmetrics, mylabel, mextreme, mevents, mhmetrics, mymetric
+export seamask, timeindices, subtemp, MHW, MCS, EventHW, EventCS, anomsa, Events, trend, annualmetrics, meanmetrics, mhlabel, mextreme, mevents, mhmetrics, mymetric
