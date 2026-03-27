@@ -458,7 +458,7 @@ function anomsa(m::MExtreme{Matrix{T}}, evst::Tuple) where T <: AbstractFloat
     MW = m.edtype == Type{EventHW} ? MHWrapper : MCWrapper
     mst, mse, _ = evst
     lm::TI = size(m.temp, 1)
-    mt::TI = length(Metrics)
+    mt = length(Metrics)
     outemp, outhsh = ntuple(_ -> Matrix{T}(undef, lm, length(mst)), 2)
     # outemp .= NaN; outhsh .= NaN
     onsan, decan, means, cums, maxes, durs, catso = ntuple(_ -> [Vector{T}(undef, m) for m in length.(mst)], mt)
@@ -767,7 +767,7 @@ function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, md
     vps = first(propertynames(ev), 7)
     evs = [reduce(vcat, getfield(ev, t)) for t in vps]
     starts, ends, cols = evst
-    cix = getindex(indices, 1)[cols]
+    cix = getindex(indices, 1)#[cols]
     # the number of events per pixel
     drs = length.(getfield(ev, 1))
     ix = TI[]
@@ -776,8 +776,8 @@ function mymetric(ev::Events{Vector{Vector{T}}}, indices::Tuple, evst::Tuple, md
         append!(ix, repeat([Tuple(s)[1]], q))
         append!(iy, repeat([Tuple(s)[2]], q))
     end
-    stdates = [mdate[i] for i in Iterators.flatten(starts[1]) |> collect]
-    endates = [mdate[i] for i in Iterators.flatten(ends[2]) |> collect]
+    stdates = [mdate[i] for i in Iterators.flatten(starts) |> collect]
+    endates = [mdate[i] for i in Iterators.flatten(ends) |> collect]
     @assert length(ix) == length(iy) == sum(drs)
     stack([evs..., stdates, endates, ix, iy])
 end
@@ -819,6 +819,7 @@ function mymetric(mm::MHCMetrics,
     field = typeof(field) == String ? Symbol(field) : field
     field in propertynames(mm) || throw(KeyError(field))
     gg = getfield(mm, field)
+    T = eltype(gg)
     # CIx, nCIx, x, y = indices
     CIx, x, y = indices
     cix = CIx[evst[3]]
