@@ -2,7 +2,7 @@
 # https://github.com/Alexander-Barth
 
 """
-    a,b,r2,sigma_a,sigma_b,sigma_e = linreg(x,y)
+    a, b, r2, sigma_a, sigma_b, sigma_e = linreg(x,y)
 
 Linear regression
 
@@ -41,18 +41,17 @@ end
 
 """
 Multi-dimensional linear regression
-y ≈ a + X b
 
+    y ≈ a + X b
 a is a scalar and b a vector
 
-y = a + X b + ϵ
+    y = a + X b + ϵ
 
-Σ ϵ² = (y- (a + X b))^2
+    Σ ϵ² = (y- (a + X b))^2
 
+    y = X beta + ϵ
 
-y = X beta + ϵ
-
-beta = inv(X*X') * X' * y
+    beta = inv(X*X') * X' * y
 """
 function linreg(X::AbstractMatrix, y::AbstractVector)
     N = size(X, 1)

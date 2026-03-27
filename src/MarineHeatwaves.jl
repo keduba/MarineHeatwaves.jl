@@ -11,6 +11,7 @@ using SparseArrays
 
 include("fullmhw.jl")
 include("linreg.jl")
+include("mhshow.jl")
 # include("timefunctions.jl")
 # include("mhwarrays.jl")
 # include("mhw_clims.jl")
